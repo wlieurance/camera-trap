@@ -29,7 +29,7 @@ def is_number(s):
         return False
 
 
-def get_sample(phtos, scored, base_path, do_random, start):
+def get_sample(phtos, scored, base_path, do_random, start=0):
     """returns the paths, md5hashes and seq_id for 1 randomly sampled row of the input database"""
     unscored_photos = phtos[~phtos['seq_id'].isin(scored)]
     if len(unscored_photos) == 0:
@@ -49,11 +49,13 @@ def get_sample(phtos, scored, base_path, do_random, start):
     return fp, h, sid
 
 
-def get_photos(dbpath, animal, date_range, site_name, camera, seq_id, verbose=False, df=True):
+def get_photos(dbpath, animal=None, date_range=None, site_name=None, camera=None, seq_id=None, classifier=None,
+               verbose=False, df=True):
     """pulls photo data from the database given the given script arguments and stores in pandas df.
     animal, site_name, camera and seq_id can be single items or lists. date_range needs to be a list of 2 items."""
 
-    sql = "SELECT a.md5hash, a.id, a.cnt, a.seq_id, b.path, b.fname, b.site_name, b.taken_dt, b.camera_id" \
+    sql = "SELECT a.md5hash, a.id, a.cnt, a.classifier, a.seq_id, b.path, b.fname, b.site_name, b.taken_dt, " \
+          "       b.camera_id" \
           "  FROM animal AS a" \
           " INNER JOIN photo AS b ON a.md5hash = b.md5hash"
     param_list = []
@@ -80,6 +82,9 @@ def get_photos(dbpath, animal, date_range, site_name, camera, seq_id, verbose=Fa
     if seq_id is not None:
         where.append("a.seq_id IN ({})".format(', '.join('?' * len(seq_id))))
         param_list.extend(seq_id)
+    if classifier is not None:
+        where.append("a.classifier IN ({})".format(', '.join('?' * len(classifier))))
+        param_list.extend(classifier)
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY b.site_name, b.camera_id, b.taken_dt;"
@@ -434,6 +439,7 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--site_name', nargs='*', help='site name(s) to filter by (e.g. "Austin" '
                         '"Becky Springs").')
     parser.add_argument('-c', '--camera', nargs='*', help='camera identifier(s) for those sites with multiple cameras.')
+    parser.add_argument('-C', '--classifier', help='the name of the person who classified the photo to filter by.')
     parser.add_argument('-v', '--verbose', action='store_true', help='include more verbose output for debugging.')
     parser.add_argument('-q', '--seq_id', nargs='+',
                         help='Specific sequence id(s) to retrieve instead of a random sample. At least one seq_id must'
@@ -442,14 +448,6 @@ if __name__ == "__main__":
                         help='The local path to a delimited file containing seq_ids to sample (1 per row, no header).')
     args = parser.parse_args()
 
-    # args = parser.parse_args(args=['G:\GIS\Photos\sswanson_tools\photo.sqlite', 'G:\GIS\Photos\sswanson_trailcam',
-    #                                'test', '-a', 'Equus ferus caballus', '-d', '06-01', '08-31', '-s',
-    #                                'Becky Springs'])
-
-    # args = parser.parse_args(args=[r'C:\Users\wlieurance\Documents\temp\horse\temp1\horse.sqlite',
-    #                                r'C:\Users\wlieurance\Documents\temp\horse\temp1', 'test', '-Q',
-    #                                r'C:\Users\wlieurance\Documents\temp\horse\seqs.csv'])
-
     my_seqs = copy.deepcopy(args.seq_id)
     args.seq_id = construct_seq_list(args.seq_file, my_seqs)
     if args.seq_id is None:
@@ -457,8 +455,12 @@ if __name__ == "__main__":
     else:
         rnd = False
     construct_tables(args.dbpath)
-    my_sql, my_params, my_photos = get_photos(args.dbpath, args.animal, args.date_range, args.site_name, args.camera,
-                                              args.seq_id)
+
+    # dbpath, animal = None, date_range = None, site_name = None, camera = None, seq_id = None, classifier = None,
+    # verbose = False, df = True
+    my_sql, my_params, my_photos = get_photos(dbpath=args.dbpath, animal=args.animal, date_range=args.date_range,
+                                              site_name=args.site_name, camera=args.camera, seq_id=args.seq_id,
+                                              classifier=args.classifier)
     if len(my_photos) == 0:
         print("No photos match script criteria. Quitting...")
         quit()

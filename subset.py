@@ -62,7 +62,7 @@ def delete_photos(dbpath, sel_sql, params, verbose=False):
     if verbose:
         conn.set_trace_callback(print)
     conn.execute('PRAGMA foreign_keys = ON;')
-    print("deleting photos...")
+    print("deleting unselected photo records...")
     c.execute(delphoto_sql, params)
     print("updating sequences...")
     c.execute(delseq_sql)
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     # parses script arguments
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description=os.linesep.join(('This script will subset a photo database and optionally copy over photos to'
+        description=os.linesep.join(('This script will subset a photo database and optionally copy over photos to',
                                      'a new base path.')))
     # positional arguments
     parser.add_argument('dbpath', help='path to sqlite database.')
@@ -162,15 +162,7 @@ if __name__ == "__main__":
                              'be provided.')
     parser.add_argument('-Q', '--seq_file',
                         help='The local path to a delimited file containing seq_ids to subset (1 per row, no header).')
-    # args = parser.parse_args()
-
-    # args = parser.parse_args(args=['G:\GIS\Photos\sswanson_tools\photo.sqlite', 'G:\GIS\Photos\sswanson_trailcam',
-    #                                'C:/Users/wlieurance/Documents/temp/horse/temp1/horse.sqlite', '-n',
-    #                                'C:/Users/wlieurance/Documents/temp/horse/temp1', '-a', 'Equus ferus caballus',
-    #                                '-d', '06-01', '08-31', '-s', 'Becky Springs'])
-    args = parser.parse_args(args=['G:\GIS\Photos\sswanson_tools\photo.sqlite', 'G:\GIS\Photos\sswanson_trailcam',
-                                   'C:/Users/wlieurance/Documents/temp/horse/temp1/horse.sqlite', '-n',
-                                   'C:/Users/wlieurance/Documents/temp/horse/temp1', '-a', 'Equus ferus caballus'])
+    args = parser.parse_args()
 
     my_seqs = copy.deepcopy(args.seq_id)
     args.seq_id = construct_seq_list(args.seq_file, my_seqs)
