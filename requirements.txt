@@ -1,0 +1,4 @@
+pytz>=2019.2
+opencv_python>=4.2.0.32
+pandas>=0.25.1
+tzlocal>=2.0.0

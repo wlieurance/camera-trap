@@ -4,7 +4,7 @@
 @created: 2020-08-13
 @author: Wade Lieurance
 
-This script will create an empty camera trap database.
+This script will create and fill a camera trap database.
 """
 
 import os
