@@ -415,25 +415,28 @@ class RatePhotos:
 if __name__ == "__main__":
     # parses script arguments
     parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description=os.linesep.join(('This script will sample photos fitting certain '
-                                     'descriptions and display them for reviewing.',
-                                     'Navigation keys on images:',
-                                     'Arrows or <> to navigate through photo sequence.',
-                                     'Press LMB, drag, and release to draw bounding box.',
-                                     'Right click to undo unsaved bounding box on current photo.',
-                                     'r to reset all bounding boxes on all photos in sequence.',
-                                     's to save current colors of bounding boxes in all sequences and submit a score.',
-                                     'n to move on to next random sequence and store scoring.',
-                                     'x to indicate no scoring is possible for a sequence.'
-                                     'q to store scoring and quit.',
-                                     'c to cancel current scoring (within shell prompt).')))
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=os.linesep.join(("This script will sample photos fitting certain "
+                                     "descriptions and display them for reviewing. ",
+                                     "Navigation keys on images (L = left, R = right, M = mouse, B = button): \n",
+                                     "'LR' arrow keys or '<>' to navigate through photo sequence. ",
+                                     "'LMB', drag, and release to draw bounding box. ",
+                                     "'RMB' to undo unsaved bounding box on current photo. ",
+                                     "'r' to reset all bounding boxes on all photos in sequence. ",
+                                     "'s' to save current colors of bounding boxes in all sequences and "
+                                     "submit a score. ",
+                                     "'n' to move on to next random sequence and store scoring. ",
+                                     "'x' to indicate no scoring is possible for a sequence. "
+                                     "'q' to store scoring and quit. ",
+                                     "'z' to create a separate resizable window with contents of the last drawn "
+                                     "bounding box for zooming ('esc' or 'q' to quit).",
+                                     "'c' to cancel current scoring (within shell prompt).")))
     # positional arguments
     parser.add_argument('dbpath', help='path to sqlite database.')
     parser.add_argument('base_path', help='base folder for photos.')
     parser.add_argument('scorer_name', help='the full name of the person doing the scoring (e.g. "Firstname Lastname")')
     parser.add_argument('-a', '--animal', nargs='*', help='The id of the animal(s) to restrict photos to '
-                                                           '(e.g. "Equus ferus caballus").')
+                                                          '(e.g. "Equus ferus caballus").')
     parser.add_argument('-d', '--date_range', nargs=2, help='date ranges to filter by (2 arguments in YYYY-MM-DD)'
                         ' format or MM-DD format.')
     parser.add_argument('-s', '--site_name', nargs='*', help='site name(s) to filter by (e.g. "Austin" '
