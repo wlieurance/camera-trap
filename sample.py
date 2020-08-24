@@ -20,6 +20,12 @@ from datetime import datetime
 from tzlocal import get_localzone
 
 
+def decomment(csvfile):
+    for row in csvfile:
+        raw = row.split('#')[0].strip()
+        if raw: yield raw
+
+
 def is_number(s):
     """determines whether an input is a number or not"""
     try:
@@ -54,10 +60,11 @@ def get_photos(dbpath, animal=None, date_range=None, site_name=None, camera=None
     """pulls photo data from the database given the given script arguments and stores in pandas df.
     animal, site_name, camera and seq_id can be single items or lists. date_range needs to be a list of 2 items."""
 
-    sql = "SELECT a.md5hash, a.id, a.cnt, a.classifier, a.seq_id, b.path, b.fname, b.site_name, b.taken_dt, " \
-          "       b.camera_id" \
-          "  FROM animal AS a" \
-          " INNER JOIN photo AS b ON a.md5hash = b.md5hash"
+    sql = '\n'.join((
+        "SELECT a.md5hash, a.id, a.cnt, a.classifier, a.seq_id, b.path, b.fname, b.site_name, b.taken_dt, ",
+        "       b.camera_id",
+        "  FROM animal AS a",
+        " INNER JOIN photo AS b ON a.md5hash = b.md5hash"))
     param_list = []
     where = []
     if animal is not None:
@@ -86,8 +93,8 @@ def get_photos(dbpath, animal=None, date_range=None, site_name=None, camera=None
         where.append("a.classifier IN ({})".format(', '.join('?' * len(classifier))))
         param_list.extend(classifier)
     if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY b.site_name, b.camera_id, b.taken_dt;"
+        sql += "\n WHERE " + " AND \n       ".join(where)
+    sql += "\n ORDER BY b.site_name, b.camera_id, b.taken_dt;"
 
     if df:
         conn = sqlite.connect(dbpath)
@@ -122,7 +129,7 @@ def construct_seq_list(csv_file, seqs):
             if seqs is None:
                 seqs = []
             with open(csv_file, newline='') as f:
-                reader = csv.reader(f, delimiter=',', quotechar='"')
+                reader = csv.reader(decomment(f), delimiter=',', quotechar='"')
                 for row in reader:
                     frow = [x.strip() for x in row]
                     seqs.extend(frow)
@@ -442,7 +449,8 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--site_name', nargs='*', help='site name(s) to filter by (e.g. "Austin" '
                         '"Becky Springs").')
     parser.add_argument('-c', '--camera', nargs='*', help='camera identifier(s) for those sites with multiple cameras.')
-    parser.add_argument('-C', '--classifier', help='the name of the person who classified the photo to filter by.')
+    parser.add_argument('-C', '--classifier', nargs='*', help='the name of the person who classified the photo to '
+                                                              'filter by.')
     parser.add_argument('-v', '--verbose', action='store_true', help='include more verbose output for debugging.')
     parser.add_argument('-q', '--seq_id', nargs='+',
                         help='Specific sequence id(s) to retrieve instead of a random sample. At least one seq_id must'
