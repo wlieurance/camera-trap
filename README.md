@@ -2,7 +2,7 @@
 A set of tools for storing and managing camera trap data.
 
 # Installation
-Users will need [python 3](https://www.python.org) on their computer and will need to install required dependencies via *pip -r requirements.txt*.
+Users will need [python 3](https://www.python.org) on their computer and will need to install required dependencies via *pip install -r requirements.txt*.
 Users will also need to install the [spatialite](https://www.gaia-gis.it/fossil/libspatialite/index) library *(mod_spatialite.dll/so)* and add it to their system path (if it is not already present).
 
 Users are also encouraged to download (and install the requirements for) the author's [photo management tools](https://github.com/wlieurance/photo_mgmt.git). This tool creates a database of photo paths, md5 hashes and EXIF tags. A user could use another tool they prefer more and export the results into a sqlite database with proper table and column names (see create_db() function within the create_db.py script for reference).
