@@ -433,7 +433,7 @@ if __name__ == "__main__":
                                      "'s' to save current colors of bounding boxes in all sequences and "
                                      "submit a score. ",
                                      "'n' to move on to next random sequence and store scoring. ",
-                                     "'x' to indicate no scoring is possible for a sequence. "
+                                     "'x' to indicate no scoring is possible for a sequence. ",
                                      "'q' to store scoring and quit. ",
                                      "'z' to create a separate resizable window with contents of the last drawn "
                                      "bounding box for zooming ('esc' or 'q' to quit).",
