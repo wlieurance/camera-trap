@@ -245,12 +245,15 @@ class RatePhotos:
             # self.refPt = []
         elif event == cv2.EVENT_RBUTTONDOWN:
             # print("RBUTTONDOWN")
-            bbox_saved = [x for x in self.bbox if x['col'] != self.col['value']]
-            bbox_unsaved = [x for x in self.bbox if x['col'] == self.col['value']]
-            self.bbox = bbox_saved + bbox_unsaved[:-1]
-            self.img = self.clone.copy()
-            for box in self.bbox:
-                cv2.rectangle(self.img, box['coords'][0], box['coords'][1], box['col'], 2)
+            self.remove_last_bbox()
+
+    def remove_last_bbox(self):
+        bbox_saved = [x for x in self.bbox if x['col'] != self.col['value']]
+        bbox_unsaved = [x for x in self.bbox if x['col'] == self.col['value']]
+        self.bbox = bbox_saved + bbox_unsaved[:-1]
+        self.img = self.clone.copy()
+        for box in self.bbox:
+            cv2.rectangle(self.img, box['coords'][0], box['coords'][1], box['col'], 2)
 
     def store_bbox(self):
         """stores a bounding box in the list of bounding boxes"""
@@ -348,6 +351,8 @@ class RatePhotos:
                 self.iboxes = []
                 print("Resetting all stored ratings for this sequence.")
 
+            elif self.key == ord("u"):
+                self.remove_last_bbox()
             # scroll using brackets or arrow keys
             elif self.key == ord(",") or self.raw_key == 2424832 or self.key == ord(".") or self.raw_key == 2555904:
                 self.store_bbox()
@@ -428,7 +433,7 @@ if __name__ == "__main__":
                                      "Navigation keys on images (L = left, R = right, M = mouse, B = button): \n",
                                      "'LR' arrow keys or '<>' to navigate through photo sequence. ",
                                      "'LMB', drag, and release to draw bounding box. ",
-                                     "'RMB' to undo unsaved bounding box on current photo. ",
+                                     "'RMB' or 'u' to undo unsaved bounding box on current photo. ",
                                      "'r' to reset all bounding boxes on all photos in sequence. ",
                                      "'s' to save current colors of bounding boxes in all sequences and "
                                      "submit a score. ",
