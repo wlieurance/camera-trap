@@ -351,7 +351,7 @@ class RatePhotos:
             # does not seem to work on macOSX (Darwin) systems for some reason
             # always registers as -1 (not visible)
             self.vis = cv2.getWindowProperty(self.win_name, cv2.WND_PROP_VISIBLE)
-            print(self.win_name, self.vis)
+            # print(self.win_name, self.vis)
 
             # if the 'r' key is pressed, reset the cropping region
             if self.key == ord("r"):
