@@ -16,6 +16,7 @@ import cv2
 import os
 import csv
 import copy
+import platform
 from datetime import datetime
 from tzlocal import get_localzone
 
@@ -180,6 +181,8 @@ class RatePhotos:
         self.i = 0  # keeps track of image number in a set being currently viewed
         self.quit_script = False
         self.set_start = 0  # keeps track of stored sets without ratings
+        self.vis = None  # keeps track of main window visibility
+        self.sys = platform.system()
 
         # sequences constructor
         self.scored_seqs = None
@@ -245,12 +248,15 @@ class RatePhotos:
             # self.refPt = []
         elif event == cv2.EVENT_RBUTTONDOWN:
             # print("RBUTTONDOWN")
-            bbox_saved = [x for x in self.bbox if x['col'] != self.col['value']]
-            bbox_unsaved = [x for x in self.bbox if x['col'] == self.col['value']]
-            self.bbox = bbox_saved + bbox_unsaved[:-1]
-            self.img = self.clone.copy()
-            for box in self.bbox:
-                cv2.rectangle(self.img, box['coords'][0], box['coords'][1], box['col'], 2)
+            self.remove_last_bbox()
+
+    def remove_last_bbox(self):
+        bbox_saved = [x for x in self.bbox if x['col'] != self.col['value']]
+        bbox_unsaved = [x for x in self.bbox if x['col'] == self.col['value']]
+        self.bbox = bbox_saved + bbox_unsaved[:-1]
+        self.img = self.clone.copy()
+        for box in self.bbox:
+            cv2.rectangle(self.img, box['coords'][0], box['coords'][1], box['col'], 2)
 
     def store_bbox(self):
         """stores a bounding box in the list of bounding boxes"""
@@ -336,10 +342,16 @@ class RatePhotos:
             # display the image and wait for a keypress
             cv2.setMouseCallback(self.win_name, self.click_and_crop)
             cv2.imshow(self.win_name, self.img)
+
             # the & 0xFF chops off the last 8 bits of the binary value of the key, negating things like numlock changing
             # the key value
             self.raw_key = cv2.waitKeyEx(1)
             self.key = self.raw_key & 0xFF
+
+            # does not seem to work on macOSX (Darwin) systems for some reason
+            # always registers as -1 (not visible)
+            self.vis = cv2.getWindowProperty(self.win_name, cv2.WND_PROP_VISIBLE)
+            print(self.win_name, self.vis)
 
             # if the 'r' key is pressed, reset the cropping region
             if self.key == ord("r"):
@@ -348,6 +360,8 @@ class RatePhotos:
                 self.iboxes = []
                 print("Resetting all stored ratings for this sequence.")
 
+            elif self.key == ord("u"):
+                self.remove_last_bbox()
             # scroll using brackets or arrow keys
             elif self.key == ord(",") or self.raw_key == 2424832 or self.key == ord(".") or self.raw_key == 2555904:
                 self.store_bbox()
@@ -372,7 +386,9 @@ class RatePhotos:
                     cv2.imshow("cropped", cropped)
                     raw_key = cv2.waitKeyEx(1)
                     key = raw_key & 0xFF
-                    if key == ord("q") or key == 27 or cv2.getWindowProperty("cropped", cv2.WND_PROP_VISIBLE) < 1:
+                    if key == ord("q") or key == 27 or \
+                            (cv2.getWindowProperty("cropped", cv2.WND_PROP_VISIBLE) < 1 and
+                             self.sys != 'Darwin'):
                         break
                 cv2.destroyWindow("cropped")
 
@@ -396,7 +412,7 @@ class RatePhotos:
 
             # quit or move to next sequence
             elif self.key == ord("n") or self.key == ord("q") or self.key == ord("x") or \
-                    cv2.getWindowProperty(self.win_name, cv2.WND_PROP_VISIBLE) < 1:
+                    (self.vis < 1 and self.sys != 'Darwin'):
                 if self.key == ord("x"):
                     recs = self.store_sequence(na=True)
                     print("Sequence marked as NA.")
@@ -406,7 +422,7 @@ class RatePhotos:
                         print(recs, "ratings stored.")
                     else:
                         self.set_start += 1
-                if self.key == ord("q") or cv2.getWindowProperty(self.win_name, cv2.WND_PROP_VISIBLE) < 1:
+                if self.key == ord("q") or (self.vis < 1 and self.sys != 'Darwin'):
                     print('Quitting...')
                     self.quit_script = True
                     break
@@ -417,6 +433,8 @@ class RatePhotos:
                 self.img = cv2.imread(self.full_paths[self.i])
                 self.clone = self.img.copy()
         cv2.destroyWindow(self.win_name)
+        for i in range(1, 5):  # macos peculiarities with opencv may require this after the destroy call
+            cv2.waitKey(1)
 
 
 if __name__ == "__main__":
@@ -428,7 +446,7 @@ if __name__ == "__main__":
                                      "Navigation keys on images (L = left, R = right, M = mouse, B = button): \n",
                                      "'LR' arrow keys or '<>' to navigate through photo sequence. ",
                                      "'LMB', drag, and release to draw bounding box. ",
-                                     "'RMB' to undo unsaved bounding box on current photo. ",
+                                     "'RMB' or 'u' to undo unsaved bounding box on current photo. ",
                                      "'r' to reset all bounding boxes on all photos in sequence. ",
                                      "'s' to save current colors of bounding boxes in all sequences and "
                                      "submit a score. ",
@@ -457,6 +475,7 @@ if __name__ == "__main__":
                              'be provided.')
     parser.add_argument('-Q', '--seq_file',
                         help='The local path to a delimited file containing seq_ids to sample (1 per row, no header).')
+
     args = parser.parse_args()
 
     my_seqs = copy.deepcopy(args.seq_id)
@@ -479,6 +498,8 @@ if __name__ == "__main__":
                         win_name='image', random=rnd)
     scenes.start()
     cv2.destroyAllWindows()  # just in case
+    for i in range(1, 5):  # macos peculiarities with opencv may require this after the destroy call
+        cv2.waitKey(1)
     print("script finished.")
 
 
