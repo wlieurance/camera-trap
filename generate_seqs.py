@@ -14,7 +14,13 @@ import pandas as pd
 import os
 import random
 import math
+import hashlib
+from datetime import datetime
+from collections.abc import Iterable
+
+# local
 from sample import get_photos
+
 
 
 def enclose_with_sql(sql):
@@ -26,12 +32,16 @@ def enclose_with_sql(sql):
 def limit_by_condition(sql, filter_condition):
     """applies a filter to the original sql if condition_filter==True no remove any records with a value in the
     condition_seqs table"""
+    # Will convert to pandas df if this gets too messy.  Would probably require altering some functions in sample.py
     if filter_condition:
         filt_sql = '\n'.join((
             ", filtered AS ( ",
             "SELECT a.* ",
             "  FROM valid AS a ",
-            "  LEFT JOIN  condition_seqs AS b ON a.seq_id = b.seq_id ",
+            "  LEFT JOIN (",
+            "       SELECT seq_id ",
+            "         FROM condition_seqs ",
+            "        GROUP BY seq_id) AS b ON a.seq_id = b.seq_id ",
             " WHERE b.seq_id IS NULL",
             " ",
             ")"))
@@ -39,6 +49,31 @@ def limit_by_condition(sql, filter_condition):
         filt_sql = '\n'.join((
             ", filtered AS ( ",
             "SELECT * FROM valid",
+            " ",
+            ")"))
+    new_sql = ''.join((sql, filt_sql))
+    return new_sql
+
+
+def limit_by_generated(sql, filter_generated):
+    """applies a filter to the original sql if generated_filter==True no remove any records with a value in the
+    sequences_gen table"""
+    if filter_generated:
+        filt_sql = '\n'.join((
+            ", gen_filtered AS ( ",
+            "SELECT a.* ",
+            "  FROM filtered AS a ",
+            "  LEFT JOIN (",
+            "       SELECT seq_id ",
+            "         FROM sequences_gen ",
+            "        GROUP BY seq_id) AS b ON a.seq_id = b.seq_id ",
+            " WHERE b.seq_id IS NULL",
+            " ",
+            ")"))
+    else:
+        filt_sql = '\n'.join((
+            ", gen_filtered AS ( ",
+            "SELECT * FROM filtered",
             " ",
             ")"))
     new_sql = ''.join((sql, filt_sql))
@@ -114,6 +149,37 @@ def constuct_opt_list(my_args):
     return arg_list
 
 
+def pop_generation(dbpath, script_vars, seqs):
+    """populates the db with the results of a sequences generation for later references."""
+    gen_dt = datetime.now()
+    hash = hashlib.md5()
+    hash.update(str(gen_dt).encode('utf-8'))
+    gen_id = hash.hexdigest()
+    gen_sql = '\n'.join((
+        "INSERT INTO generation (gen_id, gen_dt, dbpath, seq_file, classifier, animal, date_range, site_name, camera, ",
+        "                        overwrite, seq_no, filter_condition, filter_generated, subsample) VALUES ",
+        "(:gen_id, :gen_dt, :dbpath, :seq_file, :classifier, :animal, :date_range, :site_name, :camera, ",
+        "                        :overwrite, :seq_no, :filter_condition, :filter_generated, :subsample);"))
+    script_vars['gen_dt'] = gen_dt
+    script_vars['gen_id'] = gen_id
+    formatted_vars = dict()
+    for key, value in script_vars.items():
+        if isinstance(value, Iterable) and not isinstance(value, str):
+            formatted_vars[key] = '; '.join([str(x) for x in value])
+        else:
+            formatted_vars[key] = value
+    conn = sqlite.connect(dbpath)
+    c = conn.cursor()
+    c.execute(gen_sql, formatted_vars)
+    conn.commit()
+
+    seq_list = [{'seq_id': x, 'gen_id': gen_id} for x in seqs]
+    seq_sql = "INSERT INTO sequence_gen (seq_id, gen_id) VALUES (:seq_id, :gen_id);"
+    c.executemany(seq_sql, seq_list)
+    conn.commit()
+    conn.close()
+
+
 if __name__ == "__main__":
     # parses script arguments
     parser = argparse.ArgumentParser(
@@ -139,24 +205,30 @@ if __name__ == "__main__":
     parser.add_argument('-f', '--filter_condition', action='store_true', help='limit output sequences to those not '
                                                                               'already stored in the condition_seqs '
                                                                               'table.')
+    parser.add_argument('-F', '--filter_generated', action='store_true', help='limit output sequences to those not '
+                                                                              'already stored in the sequences_gen '
+                                                                              'table (previously generated).')
     parser.add_argument('-S', '--subsample', type=float, help='the percentage to subsample the sequences for output '
                                                               'into a separate csv file (my_document_sub.csv).')
 
     args = parser.parse_args()
 
-    # args = parser.parse_args([r"C:\Users\wlieurance\Documents\temp\horse_subset\horse_subset.sqlite", "-q",
+    # args = parser.parse_args([r"D:\horse_subset\horse_subset.sqlite", "-q",
     #                           r"C:\Users\wlieurance\Documents\temp\test.csv", "-a",
     #                           "Equus ferus caballus", "-d", "2016-06-30", "2018-07-14", "-s", "Becky Springs", "-c",
-    #                           "1", "-n", "20", "-f", "-S", "0.2"])
+    #                           "1", "-n", "20", "-f", "-F", "-S", "0.2"])
 
     my_sql, my_params, my_photos = get_photos(dbpath=args.dbpath, animal=args.animal,
                                               date_range=args.date_range, site_name=args.site_name,
                                               camera=args.camera, classifier=args.classifier, df=False)
     with_sql = enclose_with_sql(sql=my_sql)
     filt_sql = limit_by_condition(sql=with_sql, filter_condition=args.filter_condition)
-    final_sql, final_params, seqs = get_seqs(dbpath=args.dbpath, sql=filt_sql, params=my_params,
+    gen_sql = limit_by_generated(sql=filt_sql, filter_generated=args.filter_generated)
+    final_sql, final_params, seqs = get_seqs(dbpath=args.dbpath, sql=gen_sql, params=my_params,
                                              seq_no=args.seq_no)
     print(len(seqs), "sequences found.")
+    pop_generation(dbpath=args.dbpath, script_vars=vars(args), seqs=seqs)
     write_csv(outfile=args.seq_file, seqs=seqs, params=final_params, comment=True, overwrite=args.overwrite,
               subsample=args.subsample)
+
 

@@ -8,8 +8,8 @@ Users will also need to install the [spatialite](https://www.gaia-gis.it/fossil/
 Users are also encouraged to download (and install the requirements for) the author's [photo management tools](https://github.com/wlieurance/photo_mgmt.git). This tool creates a database of photo paths, md5 hashes and EXIF tags. A user could use another tool they prefer more and export the results into a sqlite database with proper table and column names (see create_db() function within the create_db.py script for reference).
 
 # Usage
+The user must first create the database with the [create_db.py](create_db.py) script. Required script inputs are:
 ## Arguments
-The user must first create the database with the create_db.py script. Required script inputs are:
 1. **outpath**: The file path to which to save the newly created database (e.g. *my/path/traps.sqlite* or *"C:\My Path\Traps\camera_traps.db"*).
 2. **inpath**: The path to an existing spatialite/sqlite database produced via the [PhotoMetadata.py](https://github.com/wlieurance/photo_mgmt.git) script, or a user crated database with at least two tables, **photo** and **tag**, with columns/types matching ones produced via the PhotoMetadata.py script. Please note that this script will always store file paths with the '/' separator, regardless of the native OS file path separator.
 3. **site_path**: This is the path to a comma delimited csv file containing a user's site definitions. This csv file's text fields must be quoted if they contain commas and have field names as the first line of the csv. The csv needs to contain the following fields of specific type:
@@ -44,10 +44,12 @@ The user must first create the database with the create_db.py script. Required s
 
 ## Other Usage
 Additional functionality is provided by the following scripts once a database is populated:
-1. *filter_detections.py*: This allows a user to filter out a json produced from Microsoft’s CameraTraps API to either only photos with entries in the *animal* table or only photos not in the *animal* table.
-2. *pull_random.py*: This script will take a random selection of photos matching certain criteria and copy them to a new directory. Useful for looking at a random subset of animal identifications.
-3. *sample.py*: This script will pull up either a list of sequences given to it or a random subset of sequences matching certain criteria for a user to see. It allows the user to draw bounding boxes around animals and provide a numerical rating for them. Ratings and boxes are stored in the database in the *condition* and *condition_seqs* tables.
-4. *subset.py*: This script will subset the original database to only photos matching certain criteria. It is useful for making a subdet database that only has certain object detections or date ranges in it.
+1. [filter_detections.py](filter_detections.py): This allows a user to filter out a json produced from Microsoft’s CameraTraps API to either only photos with entries in the *animal* table or only photos not in the *animal* table.
+2. [pull_random.py](pull_random.py): This script will take a random selection of photos matching certain criteria and copy them to a new directory. Useful for looking at a random subset of animal identifications.
+3. [sample.py](sample.py): This script will pull up either a list of sequences given to it or a random subset of sequences matching certain criteria for a user to see. It allows the user to draw bounding boxes around animals and provide a numerical rating for them. Ratings and boxes are stored in the database in the *condition* and *condition_seqs* tables.
+4. [subset.py](subset.py): This script will subset the original database to only photos matching certain criteria. It is useful for making a subdet database that only has certain object detections or date ranges in it.
+5. [generate_seqs.py](generate_seqs.py): This script will sample animal sequences fitting certain criteria (much like **sample.py**) and export the
+sampled sequences to a delimited file, to be used with **sample.py**.  This allows multiple people to view/rate the exact same random sub-sample of available sequences in the database.
 
 # Contributing
 If you want to add error checking or other features to anything here, please feel free to contact the author.
@@ -59,4 +61,4 @@ Suggested projects:
 Author: Wade Lieurance
 
 # License 
-Gnu Public License v3
+See [LICENSE](LICENSE).

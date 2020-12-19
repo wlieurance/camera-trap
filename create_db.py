@@ -75,7 +75,32 @@ def create_db(dbpath, srid=4326):
             FOREIGN KEY(site_name, camera_id) REFERENCES camera(site_name, camera_id) ON DELETE CASCADE,
             PRIMARY KEY(seq_id));
         """, """
+                
+        CREATE TABLE generation (
+            gen_id TEXT,
+            gen_dt DATETIME,
+            dbpath TEXT,
+            seq_file TEXT,
+            classifier TEXT,
+            animal TEXT,
+            date_range TEXT,
+            site_name TEXT,
+            camera TEXT,
+            overwrite INTEGER,
+            seq_no INTEGER,
+            filter_condition INTEGER,
+            filter_generated INTEGER,
+            subsample REAL,
+            PRIMARY KEY(gen_id));
+        """, """
         
+        CREATE TABLE sequence_gen (
+            seq_id TEXT,
+            gen_id TEXT,
+            FOREIGN KEY(seq_id) REFERENCES sequence(seq_id) ON DELETE CASCADE,
+            FOREIGN KEY(gen_id) REFERENCES generation(gen_id) ON DELETE CASCADE,
+            PRIMARY KEY(seq_id, gen_id));
+        """, """
         CREATE TABLE animal (
             md5hash TEXT,
             id TEXT,

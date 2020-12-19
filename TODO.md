@@ -1,0 +1,1 @@
+1) Keep track of sequences genreated with generate_seqs.py such that the don't get regenerated on a different script tun (optionally)
