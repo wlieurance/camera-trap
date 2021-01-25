@@ -16,11 +16,11 @@ import random
 import math
 import hashlib
 from datetime import datetime
+from datetime import date
 from collections.abc import Iterable
 
 # local
 from sample import get_photos
-
 
 
 def enclose_with_sql(sql):
@@ -65,7 +65,7 @@ def limit_by_generated(sql, filter_generated):
             "  FROM filtered AS a ",
             "  LEFT JOIN (",
             "       SELECT seq_id ",
-            "         FROM sequences_gen ",
+            "         FROM sequence_gen ",
             "        GROUP BY seq_id) AS b ON a.seq_id = b.seq_id ",
             " WHERE b.seq_id IS NULL",
             " ",
@@ -80,13 +80,15 @@ def limit_by_generated(sql, filter_generated):
     return new_sql
 
 
-def get_seqs(dbpath, sql, params, seq_no):
+def get_seqs(dbpath, sql, params, seq_no, verbose=False):
     """returns a list of seqs based on the given criteria"""
     print("getting sequences...")
     con = sqlite.connect(dbpath)
     con.row_factory = sqlite.Row
+    if verbose:
+        con.set_trace_callback(print)
     c = con.cursor()
-    group_sql = "SELECT seq_id, count(md5hash) AS n FROM filtered GROUP BY seq_id"
+    group_sql = "SELECT seq_id, count(md5hash) AS n FROM gen_filtered GROUP BY seq_id"
     if seq_no is None:
         new_sql = ' \n '.join((sql, group_sql))
     else:
@@ -126,7 +128,7 @@ def write_csv(outfile, seqs, params=None, comment=False, overwrite=False, subsam
                 writer.writerow([s])
 
 
-def constuct_opt_list(my_args):
+def construct_opt_list(my_args):
     """takes arguments from csv file instead of command line.  field names must match exactly.
     currently deprecated due to difficulty of processing nargs='*' inputs in a csv file."""
     print("reading options from csv...")
@@ -160,7 +162,7 @@ def pop_generation(dbpath, script_vars, seqs):
         "                        overwrite, seq_no, filter_condition, filter_generated, subsample) VALUES ",
         "(:gen_id, :gen_dt, :dbpath, :seq_file, :classifier, :animal, :date_range, :site_name, :camera, ",
         "                        :overwrite, :seq_no, :filter_condition, :filter_generated, :subsample);"))
-    script_vars['gen_dt'] = gen_dt
+    script_vars['gen_dt'] = date.today().isoformat()
     script_vars['gen_id'] = gen_id
     formatted_vars = dict()
     for key, value in script_vars.items():
@@ -210,6 +212,10 @@ if __name__ == "__main__":
                                                                               'table (previously generated).')
     parser.add_argument('-S', '--subsample', type=float, help='the percentage to subsample the sequences for output '
                                                               'into a separate csv file (my_document_sub.csv).')
+    parser.add_argument('-k', '--skip_store', action='store_false',
+                        help='Skip storing the generated sequences in the ''generation'' and ''sequence_gen'' tables.')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Print out extra information such as queries used to generate sequences.')
 
     args = parser.parse_args()
 
@@ -225,9 +231,13 @@ if __name__ == "__main__":
     filt_sql = limit_by_condition(sql=with_sql, filter_condition=args.filter_condition)
     gen_sql = limit_by_generated(sql=filt_sql, filter_generated=args.filter_generated)
     final_sql, final_params, seqs = get_seqs(dbpath=args.dbpath, sql=gen_sql, params=my_params,
-                                             seq_no=args.seq_no)
+                                             seq_no=args.seq_no, verbose=args.verbose)
     print(len(seqs), "sequences found.")
-    pop_generation(dbpath=args.dbpath, script_vars=vars(args), seqs=seqs)
+    if args.skip_store:
+        print('Saving generated sequences...')
+        pop_generation(dbpath=args.dbpath, script_vars=vars(args), seqs=seqs)
+    else:
+        print('Not saving generated sequences...')
     write_csv(outfile=args.seq_file, seqs=seqs, params=final_params, comment=True, overwrite=args.overwrite,
               subsample=args.subsample)
 
