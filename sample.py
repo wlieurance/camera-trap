@@ -187,6 +187,7 @@ class RatePhotos:
         # sequences constructor
         self.scored_seqs = None
         self.photo_seqs = None
+        self.skipped_seqs = []
         self.scored_filt = None
         self.full_paths = None
         self.hashes = None
@@ -321,12 +322,25 @@ class RatePhotos:
         self.scored_filt = set([x for x in self.photo_seqs if x in self.scored_seqs])
         self.reset_vars()
         print(len(self.scored_filt), "sequences already scored within provided parameters.")
-        self.full_paths, self.hashes, self.seq_id = get_sample(self.photos, self.scored_seqs, self.basepath,
+        seqs_to_skip = self.scored_seqs + self.skipped_seqs
+        self.full_paths, self.hashes, self.seq_id = get_sample(self.photos, seqs_to_skip, self.basepath,
                                                                self.random, self.set_start)
         if self.full_paths is None:
-            print("No more unscored images with given parameters. Quitting...")
+            print("No more unscored or unskipped images with given parameters. Quitting...")
             self.quit_script = True
             return
+        else:
+            skip = False
+            for path in self.full_paths:
+                if not os.path.isfile(path):
+                    print('Could not find', path)
+                    skip = True
+            if skip:
+                print('\nSkipping sequence', self.seq_id, '\n')
+                self.skipped_seqs.append(self.seq_id)
+                self.img = None
+                return
+
         self.animal_id = self.get_animalid()
         print(self.animal_id, " is current scoring target for ", len(self.full_paths), " photos (seq_id: ",
               self.seq_id, ")", sep='')
@@ -335,7 +349,8 @@ class RatePhotos:
 
     def start(self):
         """starts the image display and scoring window process"""
-        self.get_next()
+        while self.img is None and not self.quit_script:
+            self.get_next()
         cv2.namedWindow(self.win_name, cv2.WINDOW_NORMAL)
         # keep looping until the 'q' key is pressed
         while not self.quit_script:
@@ -426,8 +441,10 @@ class RatePhotos:
                     print('Quitting...')
                     self.quit_script = True
                     break
-
-                self.get_next()
+                self.img = None
+                while self.img is None and not self.quit_script:
+                    # print(self.quit_script)
+                    self.get_next()
                 if self.quit_script:
                     break
                 self.img = cv2.imread(self.full_paths[self.i])
