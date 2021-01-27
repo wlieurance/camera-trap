@@ -114,7 +114,18 @@ def create_db(dbpath, srid=4326):
         """, """
         
         CREATE INDEX tag_value_idx ON tag (value);
-        """
+        """, """
+        CREATE VIEW gen_seq_count AS 
+        WITH gen_count AS (
+        SELECT gen_id, count(seq_id) AS n
+          FROM sequence_gen
+         GROUP BY gen_id;
+        )
+
+        SELECT a.*, CASE WHEN b.n IS NULL THEN 0 ELSE b.n END AS n
+          FROM generation a
+          LEFT JOIN gen_count b ON a.gen_id = b.gen_id
+  """
     ]
 
     # connect to db
