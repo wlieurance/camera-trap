@@ -436,6 +436,7 @@ class RatePhotos:
                     if recs > 0:
                         print(recs, "ratings stored.")
                     else:
+                        self.skipped_seqs.append(self.seq_id)
                         self.set_start += 1
                 if self.key == ord("q") or (self.vis < 1 and self.sys != 'Darwin'):
                     print('Quitting...')
