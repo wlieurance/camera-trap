@@ -137,6 +137,7 @@ def construct_seq_list(csv_file, seqs):
                     # print(seqs)
         else:
             print(csv_file, "is not an existing file.")
+            quit()
 
     # create a unique list of seq_ids in case of duplicates
     if seqs is not None:
@@ -521,6 +522,6 @@ if __name__ == "__main__":
     cv2.destroyAllWindows()  # just in case
     for i in range(1, 5):  # macos peculiarities with opencv may require this after the destroy call
         cv2.waitKey(1)
-    print("script finished.")
+    print("Script finished.")
 
 
