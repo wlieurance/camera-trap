@@ -318,15 +318,18 @@ class RatePhotos:
     def get_next(self):
         """moves the images sequence onto the next available set"""
         self.scored_seqs = self.get_scored()
-        self.photo_seqs = list(self.photos['seq_id'])
-        self.scored_filt = set([x for x in self.photo_seqs if x in self.scored_seqs])
+        self.photo_seqs = list(set(self.photos['seq_id']))
+        self.scored_filt = [x for x in self.photo_seqs if x in self.scored_seqs]
         self.reset_vars()
-        print(len(self.scored_filt), "sequences already scored within provided parameters.")
+        print('\n')
+        print(len(self.scored_filt), 'scored and', len(self.skipped_seqs), 'skipped out of',  len(self.photo_seqs),
+              'sequences within provided parameters')
         seqs_to_skip = self.scored_seqs + self.skipped_seqs
         self.full_paths, self.hashes, self.seq_id = get_sample(self.photos, seqs_to_skip, self.basepath,
                                                                self.random, self.set_start)
         if self.full_paths is None:
-            print("No more unscored or unskipped images with given parameters. Quitting...")
+            print("\nNo more unscored or unskipped images with given parameters. "
+                  "Restart script to score any skipped sequences. Quitting...")
             self.quit_script = True
             return
         else:
