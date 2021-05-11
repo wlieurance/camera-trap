@@ -19,6 +19,7 @@ import copy
 import platform
 from datetime import datetime
 from tzlocal import get_localzone
+from skimage import io
 
 
 def decomment(csvfile):
@@ -335,10 +336,11 @@ class RatePhotos:
             return
         else:
             skip = False
-            for path in self.full_paths:
-                if not os.path.isfile(path):
-                    print('Could not find', path)
-                    skip = True
+            if self.basepath[0:4] != 'http':
+                for path in self.full_paths:
+                    if not os.path.isfile(path):
+                        print('Could not find', path)
+                        skip = True
             if skip:
                 print('\nSkipping sequence', self.seq_id, '\n')
                 self.skipped_seqs.append(self.seq_id)
@@ -348,7 +350,10 @@ class RatePhotos:
         self.animal_id = self.get_animalid()
         print(self.animal_id, " is current scoring target for ", len(self.full_paths), " photos (seq_id: ",
               self.seq_id, ")", sep='')
-        self.img = cv2.imread(self.full_paths[self.i])
+        if self.full_paths[self.i][0:4] != 'http':
+            self.img = io.imread(self.full_paths[self.i])
+        else:
+            self.img = io.imread(self.full_paths[self.i])
         self.clone = self.img.copy()
 
     def start(self):
@@ -388,7 +393,7 @@ class RatePhotos:
                     self.i = max(0, self.i-1)
                 elif self.key == ord(".") or self.raw_key == 2555904:
                     self.i = min(len(self.full_paths) - 1, self.i + 1)
-                self.img = cv2.imread(self.full_paths[self.i])
+                self.img = io.imread(self.full_paths[self.i])
                 self.clone = self.img.copy()
                 self.get_bbox()
                 for box in self.bbox:
@@ -452,7 +457,7 @@ class RatePhotos:
                     self.get_next()
                 if self.quit_script:
                     break
-                self.img = cv2.imread(self.full_paths[self.i])
+                self.img = io.imread(self.full_paths[self.i])
                 self.clone = self.img.copy()
         cv2.destroyWindow(self.win_name)
         for i in range(1, 5):  # macos peculiarities with opencv may require this after the destroy call
