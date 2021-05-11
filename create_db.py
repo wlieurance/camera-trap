@@ -10,14 +10,13 @@ This script will create and fill a camera trap database.
 import os
 import argparse
 import sqlite3 as sqlite
-import csv
 import pandas as pd
-import re
+import numpy as np
 import pytz
 from datetime import datetime
 
 
-def create_db(dbpath, srid=4326):
+def create_db(dbpath, srid=4326, verbose=False):
     print("creating empty spatialite database...")
     sql_list = [
         """
@@ -42,9 +41,21 @@ def create_db(dbpath, srid=4326):
         SELECT AddGeometryColumn('camera', 'geometry', {srid}, 'POINTZ');
         """.format(srid=srid), """
         
+        CREATE TABLE import (
+            import_date DATETIME PRIMARY KEY, 
+            base_path TEXT, 
+            local BOOLEAN, 
+            type TEXT);
+        """, """
+        
+        CREATE TABLE hash (
+            md5hash TEXT PRIMARY KEY, 
+            import_date DATETIME,
+            FOREIGN KEY (import_date) REFERENCES import(import_date) ON DELETE CASCADE);
+        """, """
+        
         CREATE TABLE photo (
-            md5hash TEXT,
-            path TEXT UNIQUE,
+            path TEXT PRIMARY KEY,
             fname TEXT,
             ftype TEXT,
             site_name TEXT,
@@ -53,15 +64,18 @@ def create_db(dbpath, srid=4326):
             taken_yr INTEGER,
             season_no INTEGER,
             season_order INTEGER,
-            PRIMARY KEY(md5hash),
-            FOREIGN KEY(site_name, camera_id) REFERENCES camera(site_name, camera_id) ON DELETE CASCADE);
+            md5hash TEXT,
+            FOREIGN KEY (md5hash) REFERENCES hash(md5hash) ON DELETE CASCADE ON UPDATE CASCADE,
+            FOREIGN KEY (site_name, camera_id) REFERENCES camera(site_name, camera_id) 
+            ON DELETE CASCADE ON UPDATE CASCADE);
         """, """
         
         CREATE TABLE tag (
             md5hash TEXT,
             tag TEXT,
             value TEXT,
-            PRIMARY KEY(md5hash, tag));
+            PRIMARY KEY(md5hash, tag),
+            FOREIGN KEY (md5hash) REFERENCES hash(md5hash) ON DELETE CASCADE ON UPDATE CASCADE);
         """, """
         
         CREATE TABLE sequence (
@@ -91,6 +105,7 @@ def create_db(dbpath, srid=4326):
             filter_condition INTEGER,
             filter_generated INTEGER,
             subsample REAL,
+            label TEXT,
             PRIMARY KEY(gen_id));
         """, """
         
@@ -101,6 +116,7 @@ def create_db(dbpath, srid=4326):
             FOREIGN KEY(gen_id) REFERENCES generation(gen_id) ON DELETE CASCADE,
             PRIMARY KEY(seq_id, gen_id));
         """, """
+        
         CREATE TABLE animal (
             md5hash TEXT,
             id TEXT,
@@ -108,18 +124,41 @@ def create_db(dbpath, srid=4326):
             classifier TEXT,
             seq_id TEXT,
             coords TEXT,
-            PRIMARY KEY(md5hash ,id),
-            FOREIGN KEY(md5hash) REFERENCES photo(md5hash) ON DELETE CASCADE,
+            PRIMARY KEY(md5hash, id),
+            FOREIGN KEY(md5hash) REFERENCES hash(md5hash) ON DELETE CASCADE,
             FOREIGN KEY(seq_id) REFERENCES sequence(seq_id) ON DELETE SET NULL);
         """, """
         
+        "CREATE TABLE condition (
+            md5hash TEXT, 
+            seq_id TEXT, 
+            bbox TEXT, 
+            rating NUMERIC, 
+            scorer_name TEXT, 
+            score_dt DATETIME, 
+            PRIMARY KEY(md5hash,seq_id,bbox, scorer_name), 
+            FOREIGN KEY(md5hash) REFERENCES hash(md5hash) ON DELETE CASCADE);
+        """, """
+        
+        CREATE TABLE condition_seqs (
+            seq_id TEXT, 
+            scorer_name TEXT 
+            scores BOOLEAN, 
+            PRIMARY KEY(seq_id, scorer_name), 
+            FOREIGN KEY(seq_id) REFERENCES sequence(seq_id) ON DELETE CASCADE);
+        """, """
+        
         CREATE INDEX tag_value_idx ON tag (value);
+        """, """
+        
+        CREATE INDEX IF NOT EXISTS photo_md5hash_idx ON photo (md5hash);
+        
         """, """
         CREATE VIEW gen_seq_count AS 
         WITH gen_count AS (
         SELECT gen_id, count(seq_id) AS n
           FROM sequence_gen
-         GROUP BY gen_id;
+         GROUP BY gen_id
         )
 
         SELECT a.*, CASE WHEN b.n IS NULL THEN 0 ELSE b.n END AS n
@@ -136,6 +175,9 @@ def create_db(dbpath, srid=4326):
     con.execute("SELECT InitSpatialMetaData(1)")
     c = con.cursor()
     for sql in sql_list:
+        if verbose:
+            print(sql)
+            print('-----------------------------------------------------')
         c.execute(sql)
     con.commit()
     con.close()
@@ -146,9 +188,19 @@ def copy_data(dbpath, photo_db, remove_thumbnail, tags):
     con = sqlite.connect(dbpath)
     c = con.cursor()
     c.execute("ATTACH DATABASE ? AS photo;", (photo_db,))
+    print("\tcopying from import...")
+    c.execute("""INSERT INTO import (import_date, base_path, local, type)
+                 SELECT import_date, base_path, local, type
+                   FROM photo.import;""")
+    print("\tcopying from hash...")
+    c.execute("""INSERT INTO hash (md5hash, import_date)
+                 SELECT md5hash, import_date
+                   FROM photo.hash;""")
+    print("\tcopying from photo...")
     c.execute("""INSERT INTO photo (path, fname, ftype, md5hash)
                  SELECT path, fname, ftype, md5hash
                    FROM photo.photo;""")
+    print("\tcopying from tag...")
     tags_sql = """INSERT INTO tag (md5hash, tag, value)
                   SELECT md5hash, tag, value
                     FROM photo.tag"""
@@ -174,6 +226,7 @@ def copy_data(dbpath, photo_db, remove_thumbnail, tags):
 
 
 def populate_datetime(dbpath, tz_string):
+    print("populating datetime with timezone in photo table...")
     con = sqlite.connect(dbpath)
     con.row_factory = sqlite.Row
     c = con.cursor()
@@ -218,6 +271,9 @@ def populate_sites(dbpath, site_csv):
     photo = pd.read_sql_query("SELECT * from photo", con)
     for index, row in sites.iterrows():
         r = row['regex']
+        if r is np.nan:
+            print("Site regex field cannot be blank. Quitting...")
+            quit()
         site_name = row['site_name']
         subset = photo[photo.path.str.contains(r, regex=True, na=False)]
         for index2, row2 in subset.iterrows():
@@ -266,7 +322,10 @@ def populate_cameras(dbpath, camera_csv, srid):
             camera_id = str(row['camera_id'])
             site_name = row['site_name']
             photo = pd.read_sql_query("SELECT * from photo WHERE site_name = ?", con=con, params=(site_name,))
-            subset = photo[photo.path.str.contains(r, regex=True, na=False)]
+            if r is not np.nan:
+                subset = photo[photo.path.str.contains(r, regex=True, na=False)]
+            else:
+                subset = photo
             for index2, row2 in subset.iterrows():
                 u.execute("UPDATE photo SET camera_id = ? WHERE md5hash = ?;", (camera_id, row2['md5hash']))
     con.commit()
@@ -274,6 +333,7 @@ def populate_cameras(dbpath, camera_csv, srid):
 
 
 def populate_seasons(dbpath, season_break):
+    print("populating seasons...")
     con = sqlite.connect(dbpath)
     con.row_factory = sqlite.Row
     c = con.cursor()
@@ -467,6 +527,8 @@ if __name__ == "__main__":
     parser.add_argument('-B', '--sequence_break', type=int, default=60,
                         help='the number of minutes without an animal id to use as a defining break point for a '
                              'sequence.')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help="Print misc. info for use in debugging.")
     parser.add_argument('-z', '--timezone',
                         help='a timezone available from pytz.all_timezones used to localize EXIF DateTimeOriginal.'
                              'Most camera traps do not automatically adjust to Daylight Savings, in which case a '
@@ -500,7 +562,7 @@ if __name__ == "__main__":
             print(args.animal_path, 'does not exist. quitting...')
             quit()
 
-    create_db(dbpath=args.outpath, srid=args.srid)
+    create_db(dbpath=args.outpath, srid=args.srid, verbose=args.verbose)
     copy_data(dbpath=args.outpath, photo_db=args.inpath, remove_thumbnail=args.remove_thumbnail, tags=args.tags)
     populate_datetime(dbpath=args.outpath, tz_string=args.timezone)
     populate_sites(dbpath=args.outpath, site_csv=args.site_path)
