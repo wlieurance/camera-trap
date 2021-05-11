@@ -159,9 +159,9 @@ def pop_generation(dbpath, script_vars, seqs):
     gen_id = hash.hexdigest()
     gen_sql = '\n'.join((
         "INSERT INTO generation (gen_id, gen_dt, dbpath, seq_file, classifier, animal, date_range, site_name, camera, ",
-        "                        overwrite, seq_no, filter_condition, filter_generated, subsample) VALUES ",
+        "                        overwrite, seq_no, filter_condition, filter_generated, subsample, label) VALUES ",
         "(:gen_id, :gen_dt, :dbpath, :seq_file, :classifier, :animal, :date_range, :site_name, :camera, ",
-        "                        :overwrite, :seq_no, :filter_condition, :filter_generated, :subsample);"))
+        "                        :overwrite, :seq_no, :filter_condition, :filter_generated, :subsample, :label);"))
     script_vars['gen_dt'] = date.today().isoformat()
     script_vars['gen_id'] = gen_id
     formatted_vars = dict()
@@ -214,6 +214,7 @@ if __name__ == "__main__":
                                                               'into a separate csv file (my_document_sub.csv).')
     parser.add_argument('-k', '--skip_store', action='store_false',
                         help='Skip storing the generated sequences in the ''generation'' and ''sequence_gen'' tables.')
+    parser.add_argument('-l', '--label', help='A custom label to use in identifying the sequence.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Print out extra information such as queries used to generate sequences.')
 
