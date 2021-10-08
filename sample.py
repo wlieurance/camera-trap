@@ -50,7 +50,7 @@ def get_sample(phtos, scored, base_path, do_random, start=0):
         sample = unscored_seqs.iloc[[n]]
     sid = list(sample['seq_id'])[0]
     samples = unscored_photos[(unscored_photos['seq_id'] == sample['seq_id'].iloc[0])]
-    samples = samples.sort_values(by=['site_name', 'camera_id', 'taken_dt'])
+    samples = samples.sort_values(by=['site_name', 'camera_id', 'dt_orig'])
     local_paths = list(samples['path'])
     fp = [os.path.join(base_path, x).replace('\\', '/') for x in local_paths]
     h = list(samples['md5hash'])
@@ -63,7 +63,7 @@ def get_photos(dbpath, animal=None, date_range=None, site_name=None, camera=None
     animal, site_name, camera and seq_id can be single items or lists. date_range needs to be a list of 2 items."""
 
     sql = '\n'.join((
-        "SELECT a.md5hash, a.id, a.cnt, a.classifier, a.seq_id, b.path, b.fname, b.site_name, b.taken_dt, ",
+        "SELECT a.md5hash, a.id, a.cnt, a.classifier, a.seq_id, b.path, b.fname, b.site_name, b.dt_orig, ",
         "       b.camera_id",
         "  FROM animal AS a",
         " INNER JOIN photo AS b ON a.md5hash = b.md5hash"))
@@ -78,9 +78,9 @@ def get_photos(dbpath, animal=None, date_range=None, site_name=None, camera=None
             'Date ranges are of different format.'
         assert 2 <= len(date_range[0].split('-')) <= 3, "Date ranges given in incorrect format."
         if len(date_range[0].split('-')) == 3:
-            where.append("date(substr(b.taken_dt, 1, 19)) BETWEEN ? AND ?")
+            where.append("date(substr(b.dt_orig, 1, 19)) BETWEEN ? AND ?")
         elif len(date_range[0].split('-')) == 2:
-            where.append("strftime('%m-%d', date(substr(b.taken_dt, 1, 19))) BETWEEN ? AND ?")
+            where.append("strftime('%m-%d', date(substr(b.dt_orig, 1, 19))) BETWEEN ? AND ?")
         param_list.extend(date_range)
     if site_name is not None:
         where.append("b.site_name IN ({})".format(', '.join('?' * len(site_name))))
@@ -96,7 +96,7 @@ def get_photos(dbpath, animal=None, date_range=None, site_name=None, camera=None
         param_list.extend(classifier)
     if where:
         sql += "\n WHERE " + " AND \n       ".join(where)
-    sql += "\n ORDER BY b.site_name, b.camera_id, b.taken_dt;"
+    sql += "\n ORDER BY b.site_name, b.camera_id, b.dt_orig;"
 
     if df:
         conn = sqlite.connect(dbpath)
@@ -115,8 +115,9 @@ def construct_tables(dbpath):
     """constructs tables in the given database if they do not exist"""
     conn = sqlite.connect(dbpath)
     c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS condition (md5hash TEXT, seq_id TEXT, bbox TEXT, rating NUMERIC, "
-              "scorer_name TEXT, score_dt DATETIME, PRIMARY KEY(md5hash,seq_id,bbox, scorer_name), "
+    c.execute("CREATE TABLE IF NOT EXISTS condition (md5hash TEXT, seq_id TEXT, rating NUMERIC, "
+              "scorer_name TEXT, score_dt DATETIME, bbox_x1 INTEGER, bbox_y1 INTEGER, bbox_x2 INTEGER, "
+              "bbox_y2 INTEGER, "
               "FOREIGN KEY(md5hash) REFERENCES photo(md5hash) ON DELETE CASCADE);")
     c.execute("CREATE TABLE IF NOT EXISTS condition_seqs (seq_id TEXT, scorer_name TEXT scores BOOLEAN, "
               "PRIMARY KEY(seq_id, scorer_name), FOREIGN KEY(seq_id) REFERENCES sequence(seq_id) ON DELETE CASCADE);")
@@ -295,8 +296,9 @@ class RatePhotos:
         cnt = 0
         cnx = sqlite.connect(self.dbpath)
         r = cnx.cursor()
-        isql = "INSERT OR IGNORE INTO condition (md5hash, seq_id, bbox, rating, scorer_name, score_dt) " \
-               "VALUES (?, ?, ?, ?, ?, ?);"
+        isql = "INSERT OR IGNORE INTO condition (md5hash, seq_id, rating, scorer_name, score_dt, bbox_x1, bbox_y1, " \
+               "bbox_x2, bbox_y2) " \
+               "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);"
         ssql = "INSERT OR IGNORE INTO condition_seqs (seq_id, scorer_name, scores) VALUES (?, ?, ?);"
         if na:
             r.execute(ssql, (self.seq_id, self.name, False))
@@ -305,12 +307,17 @@ class RatePhotos:
                 if ibox['bbox']:
                     for b in ibox['bbox']:
                         if b.get('score') is not None:
-                            str_coords = ', '.join((str(b['coords'][0][0]), str(b['coords'][0][1]),
-                                                    str(b['coords'][1][0]), str(b['coords'][1][1])))
-                            params = (ibox['hash'], self.seq_id, str_coords, b['score'], self.name, dt_now)
+                            # str_coords = ', '.join((str(b['coords'][0][0]), str(b['coords'][0][1]),
+                            #                         str(b['coords'][1][0]), str(b['coords'][1][1])))
+                            x1 = min(b['coords'][0][0], b['coords'][1][0])
+                            y1 = min(b['coords'][0][1], b['coords'][1][1])
+                            x2 = max(b['coords'][0][0], b['coords'][1][0])
+                            y2 = max(b['coords'][0][1], b['coords'][1][1])
+                            params = (ibox['hash'], self.seq_id, b['score'], self.name, dt_now, x1, y1, x2, y2)
                             # print(params)
-                            r.execute(isql, params)
-                            cnt += 1
+                            if x2 > x1 and y2 > y1:
+                                r.execute(isql, params)
+                                cnt += 1
             if cnt > 0:
                 r.execute(ssql, (self.seq_id, self.name, True))
         cnx.commit()

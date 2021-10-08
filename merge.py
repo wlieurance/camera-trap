@@ -86,11 +86,12 @@ def merge_db(source, dest):
     c.execute("DETACH DATABASE src;")
     con.close()
 
+
 if __name__ == "__main__":
     # parses script arguments
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description='This script will create an empty camera trap database and populate it with given inputs.')
+        description='This script will insert data from a camera trap database into another camera trap database.')
     # positional arguments
     parser.add_argument('source', help='A camera trap db from which to source records.')
     parser.add_argument('destination', help='A camera trap db in which to insert the source records.')

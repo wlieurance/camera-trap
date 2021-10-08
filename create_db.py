@@ -60,8 +60,9 @@ def create_db(dbpath, srid=4326, verbose=False):
             ftype TEXT,
             site_name TEXT,
             camera_id TEXT,
-            taken_dt DATETIME,
-            taken_yr INTEGER,
+            dt_orig DATETIME,
+            year_orig INTEGER,
+            dt_mod DATETIME,
             season_no INTEGER,
             season_order INTEGER,
             md5hash TEXT,
@@ -132,11 +133,13 @@ def create_db(dbpath, srid=4326, verbose=False):
         "CREATE TABLE condition (
             md5hash TEXT, 
             seq_id TEXT, 
-            bbox TEXT, 
             rating NUMERIC, 
             scorer_name TEXT, 
             score_dt DATETIME, 
-            PRIMARY KEY(md5hash,seq_id,bbox, scorer_name), 
+            bbox_x1 INTEGER,
+            bbox_y1 INTEGER,
+            bbox_x2 INTEGER,
+            bbox_y2 INTEGER, 
             FOREIGN KEY(md5hash) REFERENCES hash(md5hash) ON DELETE CASCADE);
         """, """
         
@@ -197,8 +200,8 @@ def copy_data(dbpath, photo_db, remove_thumbnail, tags):
                  SELECT md5hash, import_date
                    FROM photo.hash;""")
     print("\tcopying from photo...")
-    c.execute("""INSERT INTO photo (path, fname, ftype, md5hash)
-                 SELECT path, fname, ftype, md5hash
+    c.execute("""INSERT INTO photo (path, fname, ftype,  dt_orig, dt_mod, md5hash)
+                 SELECT path, fname, ftype, dt_orig, dt_mod, md5hash
                    FROM photo.photo;""")
     print("\tcopying from tag...")
     tags_sql = """INSERT INTO tag (md5hash, tag, value)
@@ -222,37 +225,6 @@ def copy_data(dbpath, photo_db, remove_thumbnail, tags):
         con.execute(tags_where)
     con.commit()
     c.execute("DETACH photo;")
-    con.close()
-
-
-def populate_datetime(dbpath, tz_string):
-    print("populating datetime with timezone in photo table...")
-    con = sqlite.connect(dbpath)
-    con.row_factory = sqlite.Row
-    c = con.cursor()
-    c.execute("""
-    WITH dt AS (
-    SELECT md5hash, value AS dt FROM tag WHERE tag = 'EXIF DateTimeOriginal'
-
-    ), f AS (
-    SELECT a.md5hash, b.dt, 
-           replace(substr(b.dt, 1, instr(b.dt, ' ') -1), ':', '-') || ' ' || substr(b.dt, instr(b.dt, ' ') + 1, 
-           length(b.dt)) AS taken_dt, substr(b.dt, 1, instr(b.dt, ':') -1) AS taken_yr
-      FROM photo AS a
-      LEFT JOIN dt As b ON a.md5hash = b.md5hash)
-
-    UPDATE photo SET taken_dt = (SELECT taken_dt FROM f WHERE md5hash = photo.md5hash),
-                     taken_yr = (SELECT taken_yr FROM f WHERE md5hash = photo.md5hash);""")
-    con.commit()
-    if tz_string:
-        tz = pytz.timezone(tz_string)
-        u = con.cursor()
-        rows = c.execute("SELECT md5hash, taken_dt FROM photo;")
-        for row in rows:
-            dt_orig = datetime.strptime(row['taken_dt'], '%Y-%m-%d %H:%M:%S')
-            dt_new = tz.localize(dt_orig)
-            u.execute("UPDATE photo SET taken_dt = ? WHERE md5hash = ?;", (dt_new, row['md5hash']))
-        con.commit()
     con.close()
 
 
@@ -341,27 +313,27 @@ def populate_seasons(dbpath, season_break):
     WITH lims (max_days) AS (VALUES ({season_break})
  
     ), lag_dts AS (
-    SELECT site_name, camera_id, cast(strftime('%Y', taken_dt) AS INT) AS year, taken_dt,
-           lag(taken_dt, 1) over(partition by site_name, camera_id order by taken_dt) as prev_dt,
-           lead(taken_dt, 1) over(partition by site_name, camera_id order by taken_dt) as next_dt
+    SELECT site_name, camera_id, cast(strftime('%Y', dt_orig) AS INT) AS year, dt_orig,
+           lag(dt_orig, 1) over(partition by site_name, camera_id order by dt_orig) as prev_dt,
+           lead(dt_orig, 1) over(partition by site_name, camera_id order by dt_orig) as next_dt
       FROM photo
       
     ), day_cnt AS (
-    SELECT site_name, camera_id, year, prev_dt, taken_dt, next_dt,
-           julianday(taken_dt) - julianday(prev_dt) AS prev_days,
-           julianday(next_dt) - julianday(taken_dt) AS next_days
+    SELECT site_name, camera_id, year, prev_dt, dt_orig, next_dt,
+           julianday(dt_orig) - julianday(prev_dt) AS prev_days,
+           julianday(next_dt) - julianday(dt_orig) AS next_days
       FROM lag_dts WHERE prev_days IS NULL OR prev_days > (SELECT max_days FROM lims) OR
                          next_days IS NULL OR next_days > ((SELECT max_days FROM lims))
     ), starts_ends AS (
-    SELECT site_name, camera_id, year, taken_dt,
+    SELECT site_name, camera_id, year, dt_orig,
            CASE WHEN prev_days IS NULL OR prev_days > (SELECT max_days FROM lims) THEN 'start'
                 WHEN next_days IS NULL OR next_days > (SELECT max_days FROM lims) THEN 'end'
                 ELSE NULL END AS date_type
       FROM day_cnt
       
     ), breaks AS (
-    SELECT site_name, camera_id, year, date_type, taken_dt AS start_dt,
-           lead(taken_dt, 1) over(partition by site_name, camera_id order by taken_dt) as end_dt
+    SELECT site_name, camera_id, year, date_type, dt_orig AS start_dt,
+           lead(dt_orig, 1) over(partition by site_name, camera_id order by dt_orig) as end_dt
       FROM starts_ends
       
     ), season AS (
@@ -371,16 +343,16 @@ def populate_seasons(dbpath, season_break):
      WHERE date_type = 'start'
     
     ), joined AS (
-    SELECT a.md5hash, a.path, a.fname, a.ftype, a.site_name, a.camera_id, a.taken_dt, a.taken_yr, b.season_no
+    SELECT a.md5hash, a.path, a.fname, a.ftype, a.site_name, a.camera_id, a.dt_orig, a.year_orig, b.season_no
       FROM photo AS a
       LEFT JOIN season AS b ON a.site_name = b.site_name AND 
                                a.camera_id = b.camera_id AND 
-                               a.taken_yr = b.year AND
-                               a.taken_dt BETWEEN b.start_dt AND b.end_dt
+                               a.year_orig = b.year AND
+                               a.dt_orig BETWEEN b.start_dt AND b.end_dt
     
     ), season_ord AS (
-    SELECT md5hash, path, fname, ftype, site_name, camera_id, taken_dt, taken_yr, season_no,
-           row_number() over(partition by site_name, camera_id, season_no order by taken_dt) AS season_order
+    SELECT md5hash, path, fname, ftype, site_name, camera_id, dt_orig, year_orig, season_no,
+           row_number() over(partition by site_name, camera_id, season_no order by dt_orig) AS season_order
       FROM joined
     )
     
@@ -418,44 +390,44 @@ def populate_sequences(dbpath, sequence_break):
     
     ), prev_date AS (
     -- combines previous data in order to do gap calculations
-    SELECT a.md5hash, a.id, a.cnt, b.site_name, b.camera_id, b.taken_dt, 
-           lag(taken_dt) over(PARTITION BY site_name, camera_id, id ORDER BY taken_dt) AS prev_dt
+    SELECT a.md5hash, a.id, a.cnt, b.site_name, b.camera_id, b.dt_orig, 
+           lag(dt_orig) over(PARTITION BY site_name, camera_id, id ORDER BY dt_orig) AS prev_dt
       FROM animal AS a
      INNER JOIN photo AS b ON a.md5hash = b.md5hash
     
     ), time_dif AS (
     -- calculates the difference between current time and previous photo time
     SELECT *, 
-           round((julianday(taken_dt) - julianday(prev_dt)) * 24 * 60, 1) AS minutedif
+           round((julianday(dt_orig) - julianday(prev_dt)) * 24 * 60, 1) AS minutedif
       FROM prev_date
     
     ), ranking AS (
     -- attaches a rank to each new break within site, camera, animal
-    SELECT md5hash, id, cnt, site_name, camera_id, taken_dt, prev_dt, minutedif,
+    SELECT md5hash, id, cnt, site_name, camera_id, dt_orig, prev_dt, minutedif,
            CASE WHEN minutedif > (SELECT minutes FROM break_limit) OR minutedif IS NULL THEN
            dense_rank() over(PARTITION BY site_name, camera_id, id, 
                                           CASE WHEN minutedif > (SELECT minutes FROM break_limit) OR minutedif IS NULL 
                                                THEN 1 
                                                ELSE 0 END 
-                             ORDER BY taken_dt) END AS rk 
+                             ORDER BY dt_orig) END AS rk 
       FROM time_dif
     
     ), partitioning AS (
     -- creates a unique partition id such that we can apply the rank from 'ranking'
     -- to all other values in that rank block
-    SELECT md5hash, id, cnt, site_name, camera_id, taken_dt, rk,
-           count(rk) OVER (ORDER BY site_name, camera_id, id, taken_dt) AS part_id
+    SELECT md5hash, id, cnt, site_name, camera_id, dt_orig, rk,
+           count(rk) OVER (ORDER BY site_name, camera_id, id, dt_orig) AS part_id
       FROM ranking
       
     ), final AS (
     -- attaches our rank id to the null values produced from 'ranking'
-    SELECT md5hash, id, cnt, site_name, camera_id, taken_dt,
-           first_value(rk) over(PARTITION BY part_id ORDER BY site_name, camera_id, id, taken_dt) AS seq
+    SELECT md5hash, id, cnt, site_name, camera_id, dt_orig,
+           first_value(rk) over(PARTITION BY part_id ORDER BY site_name, camera_id, id, dt_orig) AS seq
       FROM partitioning
       
     ), minmax AS (
     -- compiles time ranges for each sequence
-    SELECT site_name, camera_id, id, seq, min(taken_dt) AS min_dt, max(taken_dt) AS max_dt
+    SELECT site_name, camera_id, id, seq, min(dt_orig) AS min_dt, max(dt_orig) AS max_dt
       FROM final
      GROUP BY  site_name, camera_id, id, seq
      
@@ -480,7 +452,7 @@ def populate_sequences(dbpath, sequence_break):
     ), seq_join AS (
     SELECT a.*, b.seq, b.min_dt, b.max_dt, b.seq_id
       FROM animal_join AS a 
-    INNER JOIN sequence AS b ON (a.taken_dt BETWEEN b.min_dt AND b.max_dt)  
+    INNER JOIN sequence AS b ON (a.dt_orig BETWEEN b.min_dt AND b.max_dt)  
                              AND a.id = b.id 
                              AND a.site_name = b.site_name 
                              AND a.camera_id = b.camera_id)
@@ -529,22 +501,12 @@ if __name__ == "__main__":
                              'sequence.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help="Print misc. info for use in debugging.")
-    parser.add_argument('-z', '--timezone',
-                        help='a timezone available from pytz.all_timezones used to localize EXIF DateTimeOriginal.'
-                             'Most camera traps do not automatically adjust to Daylight Savings, in which case a '
-                             'choice from the Etc/GMT group would be appropriate. A list of available timezones can '
-                             'also be found at https://en.wikipedia.org/wiki/List_of_tz_database_time_zones')
 
     args = parser.parse_args()
 
     # argument checking
     if os.path.isfile(args.outpath):
         print('file already exists at dbpath. quitting...')
-        quit()
-    try:
-        tz = pytz.timezone(args.timezone)
-    except pytz.exceptions.UnknownTimeZoneError:
-        print('invalid timezone. quitting...')
         quit()
     if not os.path.isfile(args.site_path):
         print(args.site_path, 'does not exist. quitting...')
@@ -564,7 +526,6 @@ if __name__ == "__main__":
 
     create_db(dbpath=args.outpath, srid=args.srid, verbose=args.verbose)
     copy_data(dbpath=args.outpath, photo_db=args.inpath, remove_thumbnail=args.remove_thumbnail, tags=args.tags)
-    populate_datetime(dbpath=args.outpath, tz_string=args.timezone)
     populate_sites(dbpath=args.outpath, site_csv=args.site_path)
     populate_cameras(dbpath=args.outpath, camera_csv=args.camera_path, srid=args.srid)
     populate_seasons(dbpath=args.outpath, season_break=args.season_break)

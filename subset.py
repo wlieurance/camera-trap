@@ -96,7 +96,7 @@ def get_photos(dbpath, animal, date_range, site_name, camera, seq_id, verbose=Fa
     """pulls photo data from the database given the given script arguments and stores in pandas df.
     animal, site_name, camera and seq_id can be single items or lists. date_range needs to be a list of 2 items."""
 
-    sql = "SELECT a.md5hash, a.path, a.fname, a.site_name, a.taken_dt, a.camera_id, b.id, b.cnt, b.seq_id" \
+    sql = "SELECT a.md5hash, a.path, a.fname, a.site_name, a.dt_orig, a.camera_id, b.id, b.cnt, b.seq_id" \
           "  FROM photo AS a" \
           " LEFT JOIN animal AS b ON a.md5hash = b.md5hash"
     param_list = []
@@ -110,9 +110,9 @@ def get_photos(dbpath, animal, date_range, site_name, camera, seq_id, verbose=Fa
             'Date ranges are of different format.'
         assert 2 <= len(date_range[0].split('-')) <= 3, "Date ranges given in incorrect format."
         if len(date_range[0].split('-')) == 3:
-            where.append("date(substr(a.taken_dt, 1, 19)) BETWEEN ? AND ?")
+            where.append("date(substr(a.dt_orig, 1, 19)) BETWEEN ? AND ?")
         elif len(date_range[0].split('-')) == 2:
-            where.append("strftime('%m-%d', date(substr(a.taken_dt, 1, 19))) BETWEEN ? AND ?")
+            where.append("strftime('%m-%d', date(substr(a.dt_orig, 1, 19))) BETWEEN ? AND ?")
         param_list.extend(date_range)
     if site_name is not None:
         where.append("a.site_name IN ({})".format(', '.join('?' * len(site_name))))
