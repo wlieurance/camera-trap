@@ -46,16 +46,7 @@ class PhotoViewer(tk.Tk):
         self.os_path = None
         self.photo_no = 0
         self.seq_no = 0
-        self.last_seq_filter = {'min_dt': None, 'max_dt': None}
-
-        # read from db
-        self.get_seqs()
-        self.get_photos()
-        self.get_ratings()
-
-        # get current
-        self.get_current_photos()
-        # self.get_current_ratings()
+        self.last_seq_filter = {'min_dt': None, 'max_dt': None, 'site_name': [], 'scores': []}
 
         # Add a canvas
         self.canvas = tk.Canvas(self, width=1000, height=1000, borderwidth=0, highlightthickness=0)
@@ -118,8 +109,11 @@ class PhotoViewer(tk.Tk):
 
         # filters
         self.filter_frame = tk.LabelFrame(self, text="Filters", labelanchor='n')
-        self.date_lbl = tk.Label(self.filter_frame, text="Sequence start between")
-        self.date_and_lbl = tk.Label(self.filter_frame, text="and")
+        self.date_start_lbl = tk.Label(self.filter_frame, text="Start")
+        self.date_end_lbl = tk.Label(self.filter_frame, text="End")
+        self.seq_date_lbl = tk.Label(self.filter_frame, text="Sequence Dates")
+        self.site_name_lbl = tk.Label(self.filter_frame, text="Site Name")
+        self.score_lbl = tk.Label(self.filter_frame, text="Score")
 
         lower_change = (self.register(self._date_lower_change), '%d', '%i', '%s', '%S', '%P', '%V')
         higher_change = (self.register(self._date_higher_change), '%d', '%i', '%s', '%S', '%P', '%V')
@@ -131,6 +125,15 @@ class PhotoViewer(tk.Tk):
                                    validate="key", validatecommand=lower_change, fg="gray50")
         self.date_higher = tk.Entry(self.filter_frame, width=13, textvariable=self.date_higher_str,
                                     validate="key", validatecommand=higher_change, fg="gray50")
+
+        self.site_name_str = tk.StringVar()
+        self.site_name = tk.Listbox(self.filter_frame, height=5, selectmode=tk.MULTIPLE,
+                                    listvariable=self.site_name_str)
+
+        self.score_list_str = tk.StringVar()
+        self.score_list_str.set("1 2 3 4 5 6 7 8 9")
+        self.score_list = tk.Listbox(self.filter_frame, height=5, selectmode=tk.MULTIPLE,
+                                     listvariable=self.score_list_str)
 
         # main grid
         self.filter_frame.grid(row=0, column=0, sticky="ew", columnspan=3)
@@ -156,10 +159,15 @@ class PhotoViewer(tk.Tk):
         self.path_lbl.grid(row=1, column=1, sticky="w")
 
         # filter_frame grid
-        self.date_lbl.grid(row=0, column=0, columnspan=3)
-        self.date_lower.grid(row=1, column=0)
-        self.date_and_lbl.grid(row=1, column=1)
-        self.date_higher.grid(row=1, column=2)
+        self.seq_date_lbl.grid(row=0, column=0, columnspan=2)
+        self.site_name_lbl.grid(row=0, column=2)
+        self.score_lbl.grid(row=0, column=3)
+        self.date_start_lbl.grid(row=1, column=0)
+        self.date_end_lbl.grid(row=2, column=0)
+        self.date_lower.grid(row=1, column=1)
+        self.date_higher.grid(row=2, column=1)
+        self.site_name.grid(row=1, column=2, rowspan=2)
+        self.score_list.grid(row=1, column=3, rowspan=2)
 
         # widget resize settings
         self.grid_columnconfigure(0, weight=1)
@@ -173,6 +181,17 @@ class PhotoViewer(tk.Tk):
         self.date_lower.bind('<FocusOut>', self._date_lower_focusout)
         self.date_higher.bind('<FocusIn>', self._date_higher_focusin)
         self.date_higher.bind('<FocusOut>', self._date_higher_focusout)
+        self.site_name.bind('<FocusOut>', self._filter_seqs)
+        self.score_list.bind('<FocusOut>', self._filter_seqs)
+
+        # read from db
+        self.get_seqs()
+        self.get_photos()
+        self.get_ratings()
+
+        # get current
+        self.get_current_photos()
+        # self.get_current_ratings()
 
         self._refresh_img()
         # self.canvas.configure(scrollregion=self.bbox)
@@ -287,6 +306,7 @@ class PhotoViewer(tk.Tk):
          ORDER BY c.site_name, c.camera_id, c.dt_orig;
         """, con=self.con, parse_dates=['dt_orig'])
         self.filtered_photos = self.photos.copy()
+        self.get_sites()
 
     def get_ratings(self):
         print("getting ratings from db...")
@@ -313,6 +333,13 @@ class PhotoViewer(tk.Tk):
             query('md5hash == @self.displayed_photo.md5hash').\
             sort_values(by=['score_dt'])
         print(self.current_ratings)
+
+    def get_sites(self):
+        sites = self.filtered_photos.groupby('site_name', as_index=False)['md5hash'].count().\
+            sort_values(by=['site_name'])
+        # self.site_name.delete(first=0, last=self.site_name.size())
+        self.site_name_str.set(sites.site_name.tolist())
+        # self.site_name.insert(tk.END, sites.site_name.tolist())
 
     def _prev_image(self, event=None):
         new_no = max(0, self.photo_no - 1)
@@ -458,13 +485,20 @@ class PhotoViewer(tk.Tk):
             except ValueError:
                 pass
         return parsed_date
-    
-    def _filter_seqs(self):
+
+    def _filter_seqs(self, event=None):
         query_list = []
         min_dt_allowed = self.validate_date(self.date_lower_str.get())
         max_dt_allowed = self.validate_date(self.date_higher_str.get())
-        new_seq_filter = {'min_dt': min_dt_allowed, 'max_dt': max_dt_allowed}
+        # sites = [x.replace("'", "") for x in self.site_name_str.get().removeprefix('(').removesuffix(')').split(', ')]
+        selected_sites = [self.site_name.get(x) for x in self.site_name.curselection()]
+        selected_scores = [int(self.score_list.get(x)) for x in self.score_list.curselection()]
+        print(selected_sites)
+        new_seq_filter = {'min_dt': min_dt_allowed, 'max_dt': max_dt_allowed, 'site_name': selected_sites,
+                          'scores': selected_scores}
+        print(new_seq_filter, self.last_seq_filter)
         if new_seq_filter != self.last_seq_filter:
+            print("seq_filter difference")
             if min_dt_allowed:
                 # creates a pandas Series where each date string filter has had the timezone of the values its being
                 # compared against replaced, thus we can compare the datetime in the df to a tz aware representation of
@@ -474,16 +508,25 @@ class PhotoViewer(tk.Tk):
             if max_dt_allowed:
                 filter_dates_max = self.rated_seqs.max_dt.apply(lambda x: max_dt_allowed.replace(tzinfo=x.tzinfo))
                 query_list.append("max_dt <= @filter_dates_max")
+            if selected_sites:
+                query_list.append("site_name in @selected_sites")
+            if selected_scores:
+                query_list.append("site_name in @selected_sites")
             if query_list:
                 query_str = ' and '.join(query_list)
                 self.filtered_seqs = self.rated_seqs.query(query_str).sort_values(by=['min_dt']).reset_index()
             else:
                 self.filtered_seqs = self.rated_seqs.copy()
+
+            self.last_seq_filter = new_seq_filter
             self.seq_no = 0
             self.photo_no = 0
-            self.current_seq = self.filtered_seqs.seq_id[self.seq_no]
-            self.get_current_photos()
-            self._refresh_img()
+            if self.filtered_seqs.shape[0] > 0:
+                self.current_seq = self.filtered_seqs.seq_id[self.seq_no]
+                self.get_current_photos()
+                self._refresh_img()
+            else:
+                self.canvas.delete("all")
 
 
 # if __name__ == "__main__":
