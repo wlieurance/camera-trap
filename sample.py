@@ -483,7 +483,7 @@ class RatePhotos:
                     break
                 self.img = cv2.imread(self.full_paths[self.i])
                 self.clone = self.img.copy()
-        cv2.destroyWindow(self.win_name)
+        # cv2.destroyWindow(self.win_name)
         for i in range(1, 5):  # macos peculiarities with opencv may require this after the destroy call
             cv2.waitKey(1)
 
