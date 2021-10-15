@@ -472,6 +472,36 @@ def populate_sequences(dbpath, sequence_break):
     con.commit()
     con.close()
 
+def create_indices(dbpath):
+    print("Creating indices...")
+    con = sqlite.connect(dbpath)
+    c = con.cursor()
+    stmts = [
+        "CREATE INDEX IF NOT EXISTS animal_seq_id ON animal (seq_id);",
+        "CREATE INDEX IF NOT EXISTS animal_id ON animal (id);",
+        "CREATE INDEX IF NOT EXISTS camera_site_name ON camera (site_name);",
+        "CREATE INDEX IF NOT EXISTS condition_scorer_name ON condition (scorer_name);",
+        "CREATE INDEX IF NOT EXISTS condition_rating ON condition (rating);",
+        "CREATE INDEX IF NOT EXISTS condition_md5hash ON condition (md5hash);",
+        "CREATE INDEX IF NOT EXISTS condition_seqs_seq_id ON condition_seqs (seq_id);",
+        "CREATE INDEX IF NOT EXISTS photo_md5hash ON photo (md5hash);",
+        "CREATE INDEX IF NOT EXISTS photo_dt_orig ON photo (dt_orig);",
+        "CREATE INDEX IF NOT EXISTS photo_site_name_camera_id ON photo (site_name, camera_id);",
+        "CREATE INDEX IF NOT EXISTS photo_site_name ON photo (site_name);",
+        "CREATE INDEX IF NOT EXISTS photo_camera_id ON photo (camera_id);",
+        "CREATE INDEX IF NOT EXISTS photo_site_name_camera_id ON photo (site_name, camera_id);",
+        "CREATE INDEX IF NOT EXISTS photo_md5hash ON photo (md5hash);",
+        "CREATE INDEX IF NOT EXISTS sequence_id ON sequence (id);",
+        "CREATE INDEX IF NOT EXISTS sequence_site_name_camera_id ON sequence (site_name, camera_id);",
+        "CREATE INDEX IF NOT EXISTS sequence_site_name ON sequence (site_name);",
+        "CREATE INDEX IF NOT EXISTS sequence_camera_id ON sequence (camera_id);",
+        "CREATE INDEX IF NOT EXISTS sequence_gen_id ON sequence_gen (gen_id);"
+        # "CREATE INDEX IF NOT EXISTS tag_md5hash ON tag (md5hash);", # quite large
+        # "CREATE INDEX IF NOT EXISTS tag_tag ON tag (tag);", # quite large
+    ]
+    for stmt in stmts:
+        c.execute(stmt)
+
 
 if __name__ == "__main__":
     # parses script arguments
@@ -532,4 +562,5 @@ if __name__ == "__main__":
     if args.animal_path is not None:
         populate_animals(dbpath=args.outpath, animal_csv=args.animal_path)
         populate_sequences(dbpath=args.outpath, sequence_break=args.sequence_break)
+    create_indices(dbpath=args.outpath)
     print('Script finished.')
