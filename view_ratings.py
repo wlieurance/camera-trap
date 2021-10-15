@@ -39,6 +39,8 @@ class PhotoViewer(tk.Tk):
         self.filtered_photos = pd.DataFrame()
         self.ratings = pd.DataFrame()
         self.filtered_ratings = pd.DataFrame()
+        self.rating_hashes = pd.DataFrame()
+        self.rating_seqs = pd.DataFrame()
         self.current_seq = None
         self.current_photos = None
         self.current_ratings = None
@@ -46,7 +48,8 @@ class PhotoViewer(tk.Tk):
         self.os_path = None
         self.photo_no = 0
         self.seq_no = 0
-        self.last_seq_filter = {'min_dt': None, 'max_dt': None, 'site_name': [], 'scores': []}
+        self.last_seq_filter = {'min_dt': None, 'max_dt': None, 'site_name': []}
+        self.last_rating_filter = {'score_low': None, 'score_high': None}
 
         # Add a canvas
         self.canvas = tk.Canvas(self, width=1000, height=1000, borderwidth=0, highlightthickness=0)
@@ -87,56 +90,76 @@ class PhotoViewer(tk.Tk):
         # labels/entries
         self.info_frame = tk.LabelFrame(self, text="Photo Information", labelanchor='n')
 
+        self.seq_lbl = tk.Label(self.info_frame, text="Sequence Id: ", justify="right")
         self.seq_str = tk.StringVar()
-        self.seq_str.set("Sequence Id: ")
-        self.seq_lbl = tk.Entry(self.info_frame, textvariable=self.seq_str, fg="black", bg="white", bd=0,
-                                state="readonly")
+        self.seq_entry = tk.Entry(self.info_frame, textvariable=self.seq_str, fg="black", bg="white", bd=0,
+                                  state="readonly")
 
+        self.sno_lbl = tk.Label(self.info_frame, text="Sequence #: ", justify="right")
         self.sno_str = tk.StringVar()
-        self.sno_str.set("Sequence #: ")
-        self.seq_no_lbl = tk.Entry(self.info_frame, textvariable=self.sno_str, fg="black", bg="white", bd=0,
+        self.sno_entry = tk.Entry(self.info_frame, textvariable=self.sno_str, fg="black", bg="white", bd=0,
+                                  state="readonly")
+
+        self.pno_lbl = tk.Label(self.info_frame, text="Photo #: ", justify="right")
+        self.pno_str = tk.StringVar()
+        self.pno_entry = tk.Entry(self.info_frame, textvariable=self.pno_str, fg="black", bg="white", bd=0,
+                                  state="readonly")
+
+        self.path_lbl = tk.Label(self.info_frame, text="Local path: ", justify="right")
+        self.path_str = tk.StringVar()
+        self.path_entry = tk.Entry(self.info_frame, text=self.path_str, fg="black", bg="white", bd=0,
                                    state="readonly")
 
-        self.pno_str = tk.StringVar()
-        self.pno_str.set("Photo #: ")
-        self.photo_no_lbl = tk.Entry(self.info_frame, textvariable=self.pno_str, fg="black", bg="white", bd=0,
+        self.dbpath_lbl = tk.Label(self.info_frame, text="DB path: ", justify="right")
+        self.dbpath_str = tk.StringVar()
+        self.dbpath_entry = tk.Entry(self.info_frame, text=self.dbpath_str, fg="black", bg="white", bd=0,
                                      state="readonly")
 
-        self.path_str = tk.StringVar()
-        self.path_str.set("Photo path: ")
-        self.path_lbl = tk.Entry(self.info_frame, text=self.path_str, fg="black", bg="white", bd=0,
-                                 state="readonly")
+        self.hash_lbl = tk.Label(self.info_frame, text="MD5 hash: ", justify="right")
+        self.hash_str = tk.StringVar()
+        self.hash_entry = tk.Entry(self.info_frame, text=self.hash_str, fg="black", bg="white", bd=0,
+                                   state="readonly")
 
         # filters
+        # frames / labels
         self.filter_frame = tk.LabelFrame(self, text="Filters", labelanchor='n')
         self.date_start_lbl = tk.Label(self.filter_frame, text="Start")
         self.date_end_lbl = tk.Label(self.filter_frame, text="End")
-        self.seq_date_lbl = tk.Label(self.filter_frame, text="Sequence Dates")
+        self.seq_date_lbl = tk.Label(self.filter_frame, text="Sequence Dates (inclusive)")
         self.site_name_lbl = tk.Label(self.filter_frame, text="Site Name")
-        self.score_lbl = tk.Label(self.filter_frame, text="Score")
-
-        lower_change = (self.register(self._date_lower_change), '%d', '%i', '%s', '%S', '%P', '%V')
-        higher_change = (self.register(self._date_higher_change), '%d', '%i', '%s', '%S', '%P', '%V')
+        self.score_lbl = tk.Label(self.filter_frame, text="Score (inclusive)")
+        # dates
+        self.score_lower_lbl = tk.Label(self.filter_frame, text="Low")
+        self.score_higher_lbl = tk.Label(self.filter_frame, text="High")
+        date_lower_validate = (self.register(self._date_lower_change), '%d', '%i', '%s', '%S', '%P', '%V')
+        date_higher_validate = (self.register(self._date_higher_change), '%d', '%i', '%s', '%S', '%P', '%V')
         self.date_lower_str = tk.StringVar()
         self.date_lower_str.set("yyyy-mm-dd")
         self.date_higher_str = tk.StringVar()
         self.date_higher_str.set("yyyy-mm-dd")
         self.date_lower = tk.Entry(self.filter_frame, width=13, textvariable=self.date_lower_str,
-                                   validate="key", validatecommand=lower_change, fg="gray50")
+                                   validate="key", validatecommand=date_lower_validate, fg="gray50")
         self.date_higher = tk.Entry(self.filter_frame, width=13, textvariable=self.date_higher_str,
-                                    validate="key", validatecommand=higher_change, fg="gray50")
-
+                                    validate="key", validatecommand=date_higher_validate, fg="gray50")
+        # site_name
         self.site_name_str = tk.StringVar()
         self.site_name = tk.Listbox(self.filter_frame, height=5, selectmode=tk.MULTIPLE,
                                     listvariable=self.site_name_str)
-
-        self.score_list_str = tk.StringVar()
-        self.score_list_str.set("1 2 3 4 5 6 7 8 9")
-        self.score_list = tk.Listbox(self.filter_frame, height=5, selectmode=tk.MULTIPLE,
-                                     listvariable=self.score_list_str)
+        # score
+        score_validate = (self.register(self._score_change), '%d', '%i', '%s', '%S', '%P', '%V')
+        self.score_lower_str = tk.StringVar()
+        self.score_lower_entry = tk.Entry(self.filter_frame, width=5, textvariable=self.score_lower_str, validate="key",
+                                          validatecommand=score_validate)
+        self.score_higher_str = tk.StringVar()
+        self.score_higher_entry = tk.Entry(self.filter_frame, width=5, textvariable=self.score_higher_str,
+                                           validate="key", validatecommand=score_validate)
+        # filter buttons
+        self.go_btn = tk.Button(self.filter_frame, text="Filter", padx=2, pady=2, command=self._set_canvas_focus)
+        self.clear_btn = tk.Button(self.filter_frame, text="Clear filter", padx=2, pady=2,
+                                   command=self._clear_filters)
 
         # main grid
-        self.filter_frame.grid(row=0, column=0, sticky="ew", columnspan=3)
+        self.filter_frame.grid(row=0, column=0, sticky="w", columnspan=3)
         self.canvas.grid(row=1, column=0, sticky="nsew", columnspan=3)
         self.vsbar.grid(row=1, column=3, sticky="ns")
         self.hsbar.grid(row=2, column=0, sticky="ew", columnspan=3)
@@ -153,10 +176,18 @@ class PhotoViewer(tk.Tk):
         self.next_seq.grid(row=0, column=1, sticky="e")
 
         # info_frame grid
-        self.seq_lbl.grid(row=0, column=0, sticky="w")
-        self.photo_no_lbl.grid(row=0, column=1, sticky="w")
-        self.seq_no_lbl.grid(row=1, column=0, sticky="w")
-        self.path_lbl.grid(row=1, column=1, sticky="w")
+        self.seq_lbl.grid(row=0, column=0, sticky="e")
+        self.seq_entry.grid(row=0, column=1, sticky="w")
+        self.sno_lbl.grid(row=1, column=0, sticky="e")
+        self.sno_entry.grid(row=1, column=1, sticky="w")
+        self.pno_lbl.grid(row=0, column=2, sticky="e")
+        self.pno_entry.grid(row=0, column=3, sticky="w")
+        self.path_lbl.grid(row=1, column=2, sticky="e")
+        self.path_entry.grid(row=1, column=3, sticky="w")
+        self.dbpath_lbl.grid(row=2, column=2, sticky="e")
+        self.dbpath_entry.grid(row=2, column=3, sticky="w")
+        self.hash_lbl.grid(row=3, column=2, sticky="e")
+        self.hash_entry.grid(row=3, column=3, sticky="w")
 
         # filter_frame grid
         self.seq_date_lbl.grid(row=0, column=0, columnspan=2)
@@ -167,7 +198,12 @@ class PhotoViewer(tk.Tk):
         self.date_lower.grid(row=1, column=1)
         self.date_higher.grid(row=2, column=1)
         self.site_name.grid(row=1, column=2, rowspan=2)
-        self.score_list.grid(row=1, column=3, rowspan=2)
+        self.score_lower_lbl.grid(row=1, column=3)
+        self.score_higher_lbl.grid(row=2, column=3)
+        self.score_lower_entry.grid(row=1, column=4)
+        self.score_higher_entry.grid(row=2, column=4)
+        self.go_btn.grid(row=0, column=5, sticky="e", padx=5)
+        self.clear_btn.grid(row=0, column=6, sticky="e", padx=5)
 
         # widget resize settings
         self.grid_columnconfigure(0, weight=1)
@@ -182,7 +218,8 @@ class PhotoViewer(tk.Tk):
         self.date_higher.bind('<FocusIn>', self._date_higher_focusin)
         self.date_higher.bind('<FocusOut>', self._date_higher_focusout)
         self.site_name.bind('<FocusOut>', self._filter_seqs)
-        self.score_list.bind('<FocusOut>', self._filter_seqs)
+        self.score_lower_entry.bind('<FocusOut>', self._filter_ratings)
+        self.score_higher_entry.bind('<FocusOut>', self._filter_ratings)
 
         # read from db
         self.get_seqs()
@@ -196,6 +233,27 @@ class PhotoViewer(tk.Tk):
         self._refresh_img()
         # self.canvas.configure(scrollregion=self.bbox)
         self.canvas.configure(scrollregion=(0, 0, self.w, self.h))
+
+    def _set_canvas_focus(self):
+        self.canvas.focus_set()
+
+    def _clear_filters(self):
+        self.date_lower_str.set("yyyy-mm-dd")
+        self.date_lower.config(fg="gray50")
+        self.date_higher_str.set("yyyy-mm-dd")
+        self.date_higher.config(fg="gray50")
+        self.score_lower_str.set("")
+        self.score_higher_str.set("")
+        self.site_name.selection_clear(0, 'end')
+        self.filtered_seqs = self.rated_seqs.copy()
+        self.filtered_photos = self.photos.copy()
+        self.filtered_ratings = self.ratings.copy()
+        self.seq_no = 0
+        self.photo_no = 0
+        self.current_seq = self.filtered_seqs.seq_id[self.seq_no]
+        self.get_current_photos()
+        self.get_sites()
+        self._refresh_img()
 
     def _bind_arrows(self):
         self.bind('<Left>', self._prev_image)
@@ -264,6 +322,7 @@ class PhotoViewer(tk.Tk):
         self.canvas.configure(scrollregion=(0, 0, self.w, self.h))
         temp_img = self.img.resize((self.w, self.h))
         self.tk_img = ImageTk.PhotoImage(temp_img)
+        self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
         self._draw_ratings()
 
@@ -322,8 +381,20 @@ class PhotoViewer(tk.Tk):
 
     def get_current_photos(self):
         print("getting current photos...")
-        self.current_photos = self.filtered_photos.query('seq_id in @self.current_seq').sort_values(by=['dt_orig'])
-        self.displayed_photo = self.current_photos.iloc[self.photo_no]
+        if self.filtered_seqs.shape[0] > 0:
+            self.current_photos = self.filtered_photos.query('seq_id in @self.current_seq').sort_values(by=['dt_orig'])
+            print("current seq:", self.current_seq)
+            print("current photo no", self.current_photos.shape[0])
+            if self.current_photos.shape[0] > 0:
+                self.photo_no = 0
+                self.displayed_photo = self.current_photos.iloc[self.photo_no]
+            else:
+                self.displayed_photo = pd.Series(data={'path': None, 'md5hash': None}, dtype="str")
+                self.photo_no = -1
+        else:
+            self.current_photos = self.filtered_photos[0:0]  # empty the df
+            self.displayed_photo = pd.Series(data={'path': None, 'md5hash': None}, dtype="str")
+            self.photo_no = -1
         print("current path:", self.displayed_photo.path)
         print("number of photos: ", self.current_photos.shape[0])
 
@@ -335,7 +406,7 @@ class PhotoViewer(tk.Tk):
         print(self.current_ratings)
 
     def get_sites(self):
-        sites = self.filtered_photos.groupby('site_name', as_index=False)['md5hash'].count().\
+        sites = self.rated_seqs.groupby('site_name', as_index=False)['site_name'].last().\
             sort_values(by=['site_name'])
         # self.site_name.delete(first=0, last=self.site_name.size())
         self.site_name_str.set(sites.site_name.tolist())
@@ -375,25 +446,37 @@ class PhotoViewer(tk.Tk):
 
     def _refresh_img(self):
         self.canvas.delete("all")
-        self.img = Image.open(os.path.join(self.photo_dir, self.displayed_photo.path))
-        self.orig_w, self.orig_h = self.img.size
-        if self.w is None and self.h is None:
-            self.w, self.h = self.orig_w, self.orig_h
-        temp_img = self.img.resize((self.w, self.h))
-        self.tk_img = ImageTk.PhotoImage(temp_img)
-        self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+        if self.displayed_photo.path:
+            self.img = Image.open(os.path.join(self.photo_dir, self.displayed_photo.path))
+            self.orig_w, self.orig_h = self.img.size
+            if self.w is None and self.h is None:
+                self.w, self.h = self.orig_w, self.orig_h
+            self.w_ratio = self.w / self.orig_w
+            self.h_ratio = self.h / self.orig_h
+            temp_img = self.img.resize((self.w, self.h))
+            self.tk_img = ImageTk.PhotoImage(temp_img)
+            self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
         self.get_current_ratings()
         self._draw_ratings()
+        self._reset_info()
 
-        self.seq_str.set(f"Sequence Id: {self.current_seq}")
-        self.seq_lbl['width'] = len(self.seq_str.get())
-        self.sno_str.set(f"Sequence #: {self.seq_no + 1}/{self.filtered_seqs.shape[0]}")
-        self.seq_no_lbl['width'] = len(self.seq_str.get())
-        self.pno_str.set(f"Photo #: {self.photo_no + 1}/{self.current_photos.shape[0]}")
-        self.photo_no_lbl['width'] = len(self.pno_str.get())
-        self.os_path = os.path.normpath(os.path.join(self.photo_dir, self.displayed_photo.path))
-        self.path_str.set(f"Photo path: {self.os_path}")
-        self.path_lbl['width'] = len(self.path_str.get())
+    def _reset_info(self):
+        self.seq_str.set(f"{self.current_seq}")
+        self.seq_entry['width'] = len(self.seq_str.get())
+        self.sno_str.set(f"{self.seq_no + 1}/{self.filtered_seqs.shape[0]}")
+        self.sno_entry['width'] = len(self.sno_str.get())
+        self.pno_str.set(f"{self.photo_no + 1}/{self.current_photos.shape[0]}")
+        self.pno_entry['width'] = len(self.pno_str.get())
+        if self.displayed_photo.path:
+            self.os_path = os.path.normpath(os.path.join(self.photo_dir, self.displayed_photo.path))
+        else:
+            self.os_path = None
+        self.path_str.set(f"{self.os_path}")
+        self.path_entry['width'] = len(self.path_str.get())
+        self.dbpath_str.set(f"{self.displayed_photo.path}")
+        self.dbpath_entry['width'] = len(self.dbpath_str.get())
+        self.hash_str.set(f"{self.displayed_photo.md5hash}")
+        self.hash_entry['width'] = len(self.hash_str.get())
 
     def _draw_ratings(self):
         # look into vectorization
@@ -476,6 +559,17 @@ class PhotoViewer(tk.Tk):
             self.bell()
             return False
 
+    def _score_change(self,  d, i, s, S, P, V):
+        if P != '' and P is not None:
+            try:
+                int(P)
+                return True
+            except ValueError:
+                self.bell()
+                return False
+        else:
+            return True
+
     @staticmethod
     def validate_date(date_str):
         parsed_date = None
@@ -486,18 +580,15 @@ class PhotoViewer(tk.Tk):
                 pass
         return parsed_date
 
-    def _filter_seqs(self, event=None):
+    def _filter_seqs(self, force=False, event=None):
         query_list = []
         min_dt_allowed = self.validate_date(self.date_lower_str.get())
         max_dt_allowed = self.validate_date(self.date_higher_str.get())
         # sites = [x.replace("'", "") for x in self.site_name_str.get().removeprefix('(').removesuffix(')').split(', ')]
         selected_sites = [self.site_name.get(x) for x in self.site_name.curselection()]
-        selected_scores = [int(self.score_list.get(x)) for x in self.score_list.curselection()]
-        print(selected_sites)
-        new_seq_filter = {'min_dt': min_dt_allowed, 'max_dt': max_dt_allowed, 'site_name': selected_sites,
-                          'scores': selected_scores}
+        new_seq_filter = {'min_dt': min_dt_allowed, 'max_dt': max_dt_allowed, 'site_name': selected_sites}
         print(new_seq_filter, self.last_seq_filter)
-        if new_seq_filter != self.last_seq_filter:
+        if new_seq_filter != self.last_seq_filter or force:
             print("seq_filter difference")
             if min_dt_allowed:
                 # creates a pandas Series where each date string filter has had the timezone of the values its being
@@ -510,25 +601,73 @@ class PhotoViewer(tk.Tk):
                 query_list.append("max_dt <= @filter_dates_max")
             if selected_sites:
                 query_list.append("site_name in @selected_sites")
-            if selected_scores:
-                query_list.append("site_name in @selected_sites")
             if query_list:
                 query_str = ' and '.join(query_list)
                 self.filtered_seqs = self.rated_seqs.query(query_str).sort_values(by=['min_dt']).reset_index()
             else:
                 self.filtered_seqs = self.rated_seqs.copy()
+                self.filtered_photos = self.photos.copy()
 
             self.last_seq_filter = new_seq_filter
+
+        # restrict by rating filter
+        if self.rating_seqs.shape[0] > 0:
+            self.filtered_seqs = pd.merge(self.filtered_seqs, self.rating_seqs, on=['seq_id'], how='inner').\
+                reset_index(drop=True).sort_values(by=['seq_id'])
+            print(self.filtered_seqs)
+        if self.rating_hashes.shape[0] > 0:
+            self.filtered_photos = pd.merge(self.filtered_photos, self.rating_hashes, on=['md5hash'], how='inner').\
+                reset_index(drop=True).sort_values(by=['seq_id', 'md5hash'])
+            print(self.filtered_photos)
+
+        if self.filtered_seqs.shape[0] > 0:
             self.seq_no = 0
-            self.photo_no = 0
-            if self.filtered_seqs.shape[0] > 0:
-                self.current_seq = self.filtered_seqs.seq_id[self.seq_no]
-                self.get_current_photos()
-                self._refresh_img()
+            self.current_seq = self.filtered_seqs.seq_id[self.seq_no]
+        else:
+            self.seq_no = -1
+            self.current_seq = None
+        self.get_current_photos()
+        self._refresh_img()
+
+        # refresh options
+        self.get_sites()
+
+    def _filter_ratings(self, event=None):
+        rating_query_list = []
+        if self.score_lower_str.get():
+            score_low = int(self.score_lower_str.get())
+        else:
+            score_low = None
+        if self.score_higher_str.get():
+            score_high = int(self.score_higher_str.get())
+        else:
+            score_high = None
+        new_rating_filter = {'score_low': score_low, 'score_high': score_high}
+        print(new_rating_filter, self.last_rating_filter)
+        if new_rating_filter != self.last_rating_filter:
+            print("rating_filter difference")
+            if score_low:
+                rating_query_list.append("rating >= @score_low")
+            if score_high:
+                rating_query_list.append("rating <= @score_high")
+            if rating_query_list:
+                rating_query_str = ' and '.join(rating_query_list)
+                self.filtered_ratings = self.ratings.query(rating_query_str).reset_index()
+                # print(self.filtered_ratings[['seq_id', 'md5hash']].sort_values(by=['seq_id', 'md5hash']))
+                self.rating_hashes = self.filtered_ratings.groupby('md5hash', as_index=False)['md5hash'].last()
+                self.rating_seqs = self.filtered_ratings.groupby('seq_id', as_index=False)['seq_id'].last()
             else:
-                self.canvas.delete("all")
+                # reset
+                self.filtered_ratings = self.ratings.copy()
+                self.rating_hashes = pd.DataFrame()
+                self.rating_seqs = pd.DataFrame()
+                self.last_seq_filter = {'min_dt': None, 'max_dt': None, 'site_name': []}
+            self.last_rating_filter = new_rating_filter
+
+            # refresh options
+            self._filter_seqs(force=True)
 
 
 # if __name__ == "__main__":
-viewer = PhotoViewer(dbpath=r'G:\GIS\Photos\tools\animal.sqlite', photo_dir=r'G:\GIS\Photos\trailcam')
+viewer = PhotoViewer(dbpath=r'D:\animals\animal.sqlite', photo_dir=r'G:\GIS\Photos\trailcam')
 viewer.mainloop()
