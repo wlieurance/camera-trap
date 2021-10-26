@@ -212,8 +212,8 @@ if __name__ == "__main__":
                                                                               'table (previously generated).')
     parser.add_argument('-S', '--subsample', type=float, help='the percentage to subsample the sequences for output '
                                                               'into a separate csv file (my_document_sub.csv).')
-    parser.add_argument('-k', '--skip_store', action='store_false',
-                        help='Skip storing the generated sequences in the ''generation'' and ''sequence_gen'' tables.')
+    parser.add_argument('-k', '--save', action='store_true',
+                        help='Store the generated sequences in the ''generation'' and ''sequence_gen'' tables.')
     parser.add_argument('-l', '--label', help='A custom label to use in identifying the sequence.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Print out extra information such as queries used to generate sequences.')
@@ -234,7 +234,7 @@ if __name__ == "__main__":
     final_sql, final_params, seqs = get_seqs(dbpath=args.dbpath, sql=gen_sql, params=my_params,
                                              seq_no=args.seq_no, verbose=args.verbose)
     print(len(seqs), "sequences found.")
-    if args.skip_store:
+    if args.save:
         print('Saving generated sequences...')
         pop_generation(dbpath=args.dbpath, script_vars=vars(args), seqs=seqs)
     else:
