@@ -40,8 +40,10 @@ def merge_db(source, dest):
     print(c.rowcount, "rows affected.")
     print("Inserting into photo... ", end="", flush=True)
     c.execute("INSERT OR IGNORE INTO main.photo "
-              "(path, fname, ftype, site_name, camera_id, taken_dt, taken_yr, season_no, season_order, md5hash) "
-              "SELECT path, fname, ftype, site_name, camera_id, taken_dt, taken_yr, season_no, season_order, md5hash "
+              "(path, fname, ftype, site_name, camera_id, dt_orig, year_orig, dt_mod, season_no, season_order, "
+              "       md5hash) "
+              "SELECT path, fname, ftype, site_name, camera_id, dt_orig, year_orig, dt_mod, season_no, season_order, "
+              "       md5hash "
               "  FROM src.photo;")
     print(c.rowcount, "rows affected.")
     print("Inserting into tag... ", end="", flush=True)
@@ -52,9 +54,9 @@ def merge_db(source, dest):
     print("Inserting into generation... ", end="", flush=True)
     c.execute("INSERT OR IGNORE INTO main.generation "
               "(gen_id, gen_dt, dbpath, seq_file, classifier, animal, date_range, site_name, camera, overwrite, "
-              "seq_no, filter_condition, filter_generated, subsample) "
+              "seq_no, filter_condition, filter_generated, subsample, label) "
               "SELECT gen_id, gen_dt, dbpath, seq_file, classifier, animal, date_range, site_name, camera, overwrite, "
-              "seq_no, filter_condition, filter_generated, subsample "
+              "seq_no, filter_condition, filter_generated, subsample, label "
               "  FROM src.generation;")
     print(c.rowcount, "rows affected.")
     print("Inserting into sequence... ", end="", flush=True)
@@ -73,8 +75,9 @@ def merge_db(source, dest):
               "  FROM src.animal;")
     print(c.rowcount, "rows affected.")
     print("Inserting into condition... ", end="", flush=True)
-    c.execute("INSERT OR IGNORE INTO main.condition (md5hash, seq_id, bbox, rating, scorer_name, score_dt) "
-              "SELECT md5hash, seq_id, bbox, rating, scorer_name, score_dt "
+    c.execute("INSERT OR IGNORE INTO main.condition (md5hash, seq_id, rating, scorer_name, score_dt, "
+              "       bbox_x1, bbox_y1, bbox_x2, bbox_y2) "
+              "SELECT md5hash, seq_id, rating, scorer_name, score_dt, bbox_x1, bbox_y1, bbox_x2, bbox_y2 "
               "  FROM src.condition;")
     print(c.rowcount, "rows affected.")
     print("Inserting into condition_seqs... ", end="", flush=True)
