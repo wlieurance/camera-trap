@@ -130,7 +130,7 @@ def create_db(dbpath, srid=4326, verbose=False):
             FOREIGN KEY(seq_id) REFERENCES sequence(seq_id) ON DELETE SET NULL);
         """, """
         
-        "CREATE TABLE condition (
+        CREATE TABLE condition (
             md5hash TEXT, 
             seq_id TEXT, 
             rating NUMERIC, 
@@ -225,6 +225,7 @@ def copy_data(dbpath, photo_db, remove_thumbnail, tags):
         con.execute(tags_where)
     con.commit()
     c.execute("DETACH photo;")
+    c.execute("UPDATE photo SET year_orig = CAST(strftime('%Y', dt_orig) AS INTEGER);")
     con.close()
 
 
@@ -269,18 +270,18 @@ def populate_cameras(dbpath, camera_csv, srid):
     camera_ins.to_sql('camera', con=con, if_exists='append', index=False)
 
     # populate geometry from columns
-    u.execute("""
+    sql_cam_geo = """
     WITH geo_cams AS (
-    SELECT site_name, camera_id, lat, long, CASE WHEN elev_m IS NULL THEN 0 ELSE NULL END AS elev_m
+    SELECT site_name, camera_id, lat, long, coalesce(elev_m, 0) elev_m
       FROM camera WHERE lat IS NOT NULL AND long IS NOT NULL
-
     ), geo AS (
-    SELECT site_name, camera_id, lat, long, MakePointZ(long, lat, elev_m, {srid}) AS geometry
+    SELECT site_name, camera_id, lat, long, MakePointZ(long, lat, elev_m, 4326) AS geometry
       FROM geo_cams)
   
     UPDATE camera SET geometry = (SELECT geometry FROM geo WHERE site_name = camera.site_name 
                                                              AND camera_id = camera.camera_id);
-    """.format(srid=srid))
+    """.format(srid=srid)
+    u.execute(sql_cam_geo)
     con.commit()
 
     # populate camera_id in photo table
@@ -422,7 +423,7 @@ def populate_sequences(dbpath, sequence_break):
     ), final AS (
     -- attaches our rank id to the null values produced from 'ranking'
     SELECT md5hash, id, cnt, site_name, camera_id, dt_orig,
-           first_value(rk) over(PARTITION BY part_id ORDER BY site_name, camera_id, id, dt_orig) AS seq
+           first_value(rk) over(PARTITION BY part_id ORDER BY site_name, camera_id, id, dt_orig, rk DESC) AS seq
       FROM partitioning
       
     ), minmax AS (
@@ -471,6 +472,7 @@ def populate_sequences(dbpath, sequence_break):
     c.execute(update_sql)
     con.commit()
     con.close()
+
 
 def create_indices(dbpath):
     print("Creating indices...")
