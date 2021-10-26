@@ -371,7 +371,7 @@ class RatePhotos:
         print("'", self.animal_id, "' is current scoring target for ", len(self.full_paths), " photos (seq_id: ",
               self.seq_id, ")", sep='')
         if self.full_paths[self.i][0:4] != 'http':
-            self.img = cv2.imread(self.full_paths[self.i])
+            self.img = cv2.imread(self.full_paths[self.i])  # replace with sklearn imread() for http
         else:
             self.img = cv2.imread(self.full_paths[self.i])
         self.clone = self.img.copy()
