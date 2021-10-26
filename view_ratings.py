@@ -1,23 +1,25 @@
 import tkinter as tk
+import tkinter.filedialog
 import sqlite3 as sqlite
 import pandas as pd
 import os
 import re
+import cv2
 from PIL import ImageTk, Image
 from tkinter.font import Font
-from datetime import datetime
 from dateutil.parser import parse
+from matplotlib import colors
 
 COLORS = [
-    {'score': 1, 'color': 'red4'},
-    {'score': 2, 'color': 'red'},
-    {'score': 3, 'color': 'orange'},
-    {'score': 4, 'color': 'yellow'},
-    {'score': 5, 'color': 'lime green'},
-    {'score': 6, 'color': 'turquoise'},
-    {'score': 7, 'color': 'sky blue'},
-    {'score': 8, 'color': 'blue'},
-    {'score': 9, 'color': 'purple'}
+    {'score': 1, 'label': 'red4', 'hex': '#8B0000'},
+    {'score': 2, 'label': 'red', 'hex': '#FF0000'},
+    {'score': 3, 'label': 'orange', 'hex': '#FF8000'},
+    {'score': 4, 'label': 'yellow', 'hex': '#FFFF00'},
+    {'score': 5, 'label': 'limegreen', 'hex': '#32CD32'},
+    {'score': 6, 'label': 'turquoise', 'hex': '#40E0D0'},
+    {'score': 7, 'label': 'skyblue', 'hex': '#87CEEB'},
+    {'score': 8, 'label': 'blue', 'hex': '#0000FF'},
+    {'score': 9, 'label': 'purple', 'hex': '#800080'}
 ]
 
 
@@ -49,7 +51,8 @@ class PhotoViewer(tk.Tk):
         self.photo_no = 0
         self.seq_no = 0
         self.last_seq_filter = {'min_dt': None, 'max_dt': None, 'site_name': []}
-        self.last_rating_filter = {'score_low': None, 'score_high': None}
+        self.last_rating_filter = {'score_low': None, 'score_high': None, 'scorer_name': []}
+        self.export_dir = None
 
         # Add a canvas
         self.canvas = tk.Canvas(self, width=1000, height=1000, borderwidth=0, highlightthickness=0)
@@ -126,8 +129,9 @@ class PhotoViewer(tk.Tk):
         self.date_start_lbl = tk.Label(self.filter_frame, text="Start")
         self.date_end_lbl = tk.Label(self.filter_frame, text="End")
         self.seq_date_lbl = tk.Label(self.filter_frame, text="Sequence Dates (inclusive)")
-        self.site_name_lbl = tk.Label(self.filter_frame, text="Site Name")
+        self.site_name_lst_lbl = tk.Label(self.filter_frame, text="Site Name")
         self.score_lbl = tk.Label(self.filter_frame, text="Score (inclusive)")
+        self.scorer_lbl = tk.Label(self.filter_frame, text="Scorer name")
         # dates
         self.score_lower_lbl = tk.Label(self.filter_frame, text="Low")
         self.score_higher_lbl = tk.Label(self.filter_frame, text="High")
@@ -143,29 +147,60 @@ class PhotoViewer(tk.Tk):
                                     validate="key", validatecommand=date_higher_validate, fg="gray50")
         # site_name
         self.site_name_str = tk.StringVar()
-        self.site_name = tk.Listbox(self.filter_frame, height=5, selectmode=tk.MULTIPLE,
-                                    listvariable=self.site_name_str)
+        self.site_name_lst = tk.Listbox(self.filter_frame, height=5, selectmode=tk.MULTIPLE,
+                                        listvariable=self.site_name_str)
         # score
-        score_validate = (self.register(self._score_change), '%d', '%i', '%s', '%S', '%P', '%V')
+        int_validate = (self.register(self._int_change), '%d', '%i', '%s', '%S', '%P', '%V')
         self.score_lower_str = tk.StringVar()
         self.score_lower_entry = tk.Entry(self.filter_frame, width=5, textvariable=self.score_lower_str, validate="key",
-                                          validatecommand=score_validate)
+                                          validatecommand=int_validate)
         self.score_higher_str = tk.StringVar()
         self.score_higher_entry = tk.Entry(self.filter_frame, width=5, textvariable=self.score_higher_str,
-                                           validate="key", validatecommand=score_validate)
+                                           validate="key", validatecommand=int_validate)
+
+        # classifier name
+        self.scorer_str = tk.StringVar()
+        self.scorer_lst = tk.Listbox(self.filter_frame, height=5, selectmode=tk.MULTIPLE,
+                                     listvariable=self.scorer_str)
+
         # filter buttons
         self.go_btn = tk.Button(self.filter_frame, text="Filter", padx=2, pady=2, command=self._set_canvas_focus)
         self.clear_btn = tk.Button(self.filter_frame, text="Clear filter", padx=2, pady=2,
                                    command=self._clear_filters)
 
+        # export widgets
+        self.export_frame = tk.LabelFrame(self, text="Export", labelanchor='n')
+        self.max_export_lbl = tk.Label(self.export_frame, text="Max export #:")
+        self.max_export_str = tk.StringVar()
+        self.max_export_entry = tk.Entry(self.export_frame, width=5, textvariable=self.max_export_str, validate="key",
+                                         validatecommand=int_validate)
+        self.max_export_str.set("50")
+        self.change_export_btn = tk.Button(self.export_frame, text="Export Dir", padx=2, pady=2,
+                                           command=self._set_export_dir)
+
+        self.structure_int = tk.IntVar()
+        self.structure_chk = tk.Checkbutton(self.export_frame, text="Keep directory structure during export?",
+                                            variable=self.structure_int)
+        self.only_rated_int = tk.IntVar()
+        self.only_rated_chk = tk.Checkbutton(self.export_frame, text="Only export rated photos?",
+                                             variable=self.only_rated_int)
+        self.export_one_btn = tk.Button(self.export_frame, text="Export Photo", padx=2, pady=2,
+                                        command=lambda: self._export_photos('single'))
+        self.export_seq_btn = tk.Button(self.export_frame, text="Export Sequence", padx=2, pady=2,
+                                        command=lambda: self._export_photos('seq'))
+        self.export_all_btn = tk.Button(self.export_frame, text="Export Filtered", padx=2, pady=2,
+                                        command=lambda: self._export_photos('filter'))
+
+
         # main grid
-        self.filter_frame.grid(row=0, column=0, sticky="w", columnspan=3)
-        self.canvas.grid(row=1, column=0, sticky="nsew", columnspan=3)
-        self.vsbar.grid(row=1, column=3, sticky="ns")
-        self.hsbar.grid(row=2, column=0, sticky="ew", columnspan=3)
-        self.bottom_left_frame.grid(row=3, column=0, sticky="ew")
-        self.bottom_right_frame.grid(row=3, column=2, sticky="ew")
-        self.info_frame.grid(row=4, column=0, sticky="ew", columnspan=3)
+        self.filter_frame.grid(row=0, column=0, sticky="sw")
+        self.export_frame.grid(row=0, column=1, sticky="sw", columnspan=3)
+        self.canvas.grid(row=1, column=0, sticky="nsew", columnspan=4)
+        self.vsbar.grid(row=1, column=4, sticky="ns")
+        self.hsbar.grid(row=2, column=0, sticky="ew", columnspan=4)
+        self.bottom_left_frame.grid(row=3, column=0, sticky="w")
+        self.bottom_right_frame.grid(row=3, column=3, sticky="e")
+        self.info_frame.grid(row=4, column=0, sticky="w", columnspan=3)
 
         # bottom_left_frame grid
         self.prev_seq.grid(row=0, column=0, sticky="w")
@@ -191,19 +226,31 @@ class PhotoViewer(tk.Tk):
 
         # filter_frame grid
         self.seq_date_lbl.grid(row=0, column=0, columnspan=2)
-        self.site_name_lbl.grid(row=0, column=2)
+        self.site_name_lst_lbl.grid(row=0, column=2)
         self.score_lbl.grid(row=0, column=3)
-        self.date_start_lbl.grid(row=1, column=0)
-        self.date_end_lbl.grid(row=2, column=0)
-        self.date_lower.grid(row=1, column=1)
-        self.date_higher.grid(row=2, column=1)
-        self.site_name.grid(row=1, column=2, rowspan=2)
-        self.score_lower_lbl.grid(row=1, column=3)
-        self.score_higher_lbl.grid(row=2, column=3)
-        self.score_lower_entry.grid(row=1, column=4)
-        self.score_higher_entry.grid(row=2, column=4)
-        self.go_btn.grid(row=0, column=5, sticky="e", padx=5)
-        self.clear_btn.grid(row=0, column=6, sticky="e", padx=5)
+        self.date_start_lbl.grid(row=1, column=0, sticky="n")
+        self.date_end_lbl.grid(row=2, column=0, sticky="n")
+        self.date_lower.grid(row=1, column=1, sticky="n")
+        self.date_higher.grid(row=2, column=1, sticky="n")
+        self.site_name_lst.grid(row=1, column=2, rowspan=2, sticky="n")
+        self.score_lower_lbl.grid(row=1, column=3, sticky="n")
+        self.score_higher_lbl.grid(row=2, column=3, sticky="n")
+        self.score_lower_entry.grid(row=1, column=4, sticky="n")
+        self.score_higher_entry.grid(row=2, column=4, sticky="n")
+        self.scorer_lbl.grid(row=0, column=5)
+        self.scorer_lst.grid(row=1, column=5, rowspan=2, sticky="n")
+        self.go_btn.grid(row=1, column=6, sticky="ne", padx=5)
+        self.clear_btn.grid(row=2, column=6, sticky="ne", padx=5)
+
+        # export frame grid
+        self.structure_chk.grid(row=0, column=0, sticky="w", columnspan=3)
+        self.only_rated_chk.grid(row=1, column=0, sticky="w", columnspan=3)
+        self.max_export_lbl.grid(row=2, column=0, sticky="w")
+        self.max_export_entry.grid(row=2, column=1, sticky="w")
+        self.change_export_btn.grid(row=2, column=2, sticky="e")
+        self.export_one_btn.grid(row=3, column=0, sticky="w")
+        self.export_seq_btn.grid(row=3, column=1, sticky="w")
+        self.export_all_btn.grid(row=3, column=2, sticky="w")
 
         # widget resize settings
         self.grid_columnconfigure(0, weight=1)
@@ -217,9 +264,10 @@ class PhotoViewer(tk.Tk):
         self.date_lower.bind('<FocusOut>', self._date_lower_focusout)
         self.date_higher.bind('<FocusIn>', self._date_higher_focusin)
         self.date_higher.bind('<FocusOut>', self._date_higher_focusout)
-        self.site_name.bind('<FocusOut>', self._filter_seqs)
+        self.site_name_lst.bind('<FocusOut>', self._filter_seqs)
         self.score_lower_entry.bind('<FocusOut>', self._filter_ratings)
         self.score_higher_entry.bind('<FocusOut>', self._filter_ratings)
+        self.scorer_lst.bind('<FocusOut>', self._filter_ratings)
 
         # read from db
         self.get_seqs()
@@ -244,7 +292,8 @@ class PhotoViewer(tk.Tk):
         self.date_higher.config(fg="gray50")
         self.score_lower_str.set("")
         self.score_higher_str.set("")
-        self.site_name.selection_clear(0, 'end')
+        self.site_name_lst.selection_clear(0, 'end')
+        self.scorer_lst.selection_clear(0, 'end')
         self.filtered_seqs = self.rated_seqs.copy()
         self.filtered_photos = self.photos.copy()
         self.filtered_ratings = self.ratings.copy()
@@ -378,6 +427,7 @@ class PhotoViewer(tk.Tk):
          ORDER BY a.seq_id, b.md5hash, a.scorer_name;
         """, con=self.con, parse_dates=['score_dt'])
         self.filtered_ratings = self.ratings.copy()
+        self.get_scorers()
 
     def get_current_photos(self):
         print("getting current photos...")
@@ -408,9 +458,14 @@ class PhotoViewer(tk.Tk):
     def get_sites(self):
         sites = self.rated_seqs.groupby('site_name', as_index=False)['site_name'].last().\
             sort_values(by=['site_name'])
-        # self.site_name.delete(first=0, last=self.site_name.size())
+        # self.site_name_lst.delete(first=0, last=self.site_name_lst.size())
         self.site_name_str.set(sites.site_name.tolist())
-        # self.site_name.insert(tk.END, sites.site_name.tolist())
+        # self.site_name_lst.insert(tk.END, sites.site_name.tolist())
+
+    def get_scorers(self):
+        scorers = self.ratings.groupby('scorer_name', as_index=False)['scorer_name'].last().\
+            sort_values(by=['scorer_name'])
+        self.scorer_str.set(scorers.scorer_name.tolist())
 
     def _prev_image(self, event=None):
         new_no = max(0, self.photo_no - 1)
@@ -481,7 +536,7 @@ class PhotoViewer(tk.Tk):
     def _draw_ratings(self):
         # look into vectorization
         for x in self.current_ratings.itertuples():
-            color = next((y['color'] for y in COLORS if y['score'] == int(x.rating)), ['#000000'])
+            color = next((y['hex'] for y in COLORS if y['score'] == int(x.rating)), ['#000000'])
             bbox_orig = [x.bbox_x1, x.bbox_y1, x.bbox_x2, x.bbox_y2]
             bbox = [int(round(x, 0)) for x in [x.bbox_x1 * self.w_ratio, x.bbox_y1 * self.h_ratio,
                     x.bbox_x2 * self.w_ratio, x.bbox_y2 * self.h_ratio]]
@@ -495,6 +550,62 @@ class PhotoViewer(tk.Tk):
                                                fill=color, anchor='ne',
                                                font=Font(size=max(int(round(14*self.h_ratio, 0)), 8),
                                                          weight='bold'))
+
+    def _set_export_dir(self):
+        self.export_dir = tk.filedialog.askdirectory(title="Choose an export directory...")
+
+    def _export_photos(self, export):
+        print(export)
+        if not self.export_dir:
+            self._set_export_dir()
+        if export == 'single':
+            photos = self.current_photos.iloc[[self.photo_no]]
+        elif export == 'seq':
+            photos = self.current_photos
+        elif export == 'filter':
+            photos = self.filtered_photos
+        else:
+            return
+        if self.max_export_str.get():
+            max_export = int(self.max_export_str.get())
+        else:
+            max_export = photos.shape[0]
+        print(photos)
+        export_counter = 0
+        for photo in photos.itertuples():
+            path = os.path.normpath(os.path.join(self.photo_dir, photo.path))
+            cv2_img = cv2.imread(path)
+            ratings = self.filtered_ratings.query('md5hash == @photo.md5hash')
+            for r in ratings.itertuples():
+                c1 = (int(r.bbox_x1), int(r.bbox_y1))
+                c2 = (int(r.bbox_x2), int(r.bbox_y2))
+                color = next((y['hex'] for y in COLORS if y['score'] == int(r.rating)), ['#000000'])
+                rgb = tuple([int(round(x*255, 0)) for x in colors.to_rgb(color)])
+                gbr = (rgb[2], rgb[1], rgb[0])
+                rect = cv2.rectangle(cv2_img, c1, c2, gbr, 2)
+                scorer_txt = cv2.putText(cv2_img, r.scorer_name,  (c1[0], c1[1]-10), cv2.FONT_HERSHEY_SIMPLEX,
+                                         0.7, gbr, 2)
+                rating_txt = cv2.putText(cv2_img, str(int(r.rating)), (c2[0]-10, c2[1] + 20), cv2.FONT_HERSHEY_SIMPLEX,
+                                         0.7, gbr, 2)
+            if (ratings.shape[0] > 0 and self.only_rated_int.get()) or not self.only_rated_int.get():
+                if export_counter < max_export:
+                    old_name = os.path.basename(photo.path)
+                    if ratings.shape[0] > 0:
+                        new_name = ''.join((os.path.splitext(old_name)[0], "_rated", os.path.splitext(old_name)[1]))
+                    else:
+                        new_name = old_name
+                    if self.structure_int.get():
+                        out_path = os.path.normpath(
+                            os.path.join(self.export_dir, os.path.dirname(self.displayed_photo.path), new_name)
+                        )
+                        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                    else:
+                        out_path = os.path.normpath(os.path.join(self.export_dir, new_name))
+                    cv2.imwrite(out_path, cv2_img)
+                    export_counter += 1
+                else:
+                    break
+        tk.messagebox.showinfo(title="Exported", message=' '.join(("Exported", str(export_counter), "photos.")))
 
     # entry callbacks
     # %d = Type of action (1=insert, 0=delete, -1 for others)
@@ -559,7 +670,7 @@ class PhotoViewer(tk.Tk):
             self.bell()
             return False
 
-    def _score_change(self,  d, i, s, S, P, V):
+    def _int_change(self,  d, i, s, S, P, V):
         if P != '' and P is not None:
             try:
                 int(P)
@@ -585,7 +696,7 @@ class PhotoViewer(tk.Tk):
         min_dt_allowed = self.validate_date(self.date_lower_str.get())
         max_dt_allowed = self.validate_date(self.date_higher_str.get())
         # sites = [x.replace("'", "") for x in self.site_name_str.get().removeprefix('(').removesuffix(')').split(', ')]
-        selected_sites = [self.site_name.get(x) for x in self.site_name.curselection()]
+        selected_sites = [self.site_name_lst.get(x) for x in self.site_name_lst.curselection()]
         new_seq_filter = {'min_dt': min_dt_allowed, 'max_dt': max_dt_allowed, 'site_name': selected_sites}
         print(new_seq_filter, self.last_seq_filter)
         if new_seq_filter != self.last_seq_filter or force:
@@ -642,7 +753,8 @@ class PhotoViewer(tk.Tk):
             score_high = int(self.score_higher_str.get())
         else:
             score_high = None
-        new_rating_filter = {'score_low': score_low, 'score_high': score_high}
+        selected_scorers = [self.scorer_lst.get(x) for x in self.scorer_lst.curselection()]
+        new_rating_filter = {'score_low': score_low, 'score_high': score_high, 'scorer_name': selected_scorers}
         print(new_rating_filter, self.last_rating_filter)
         if new_rating_filter != self.last_rating_filter:
             print("rating_filter difference")
@@ -650,6 +762,8 @@ class PhotoViewer(tk.Tk):
                 rating_query_list.append("rating >= @score_low")
             if score_high:
                 rating_query_list.append("rating <= @score_high")
+            if selected_scorers:
+                rating_query_list.append("scorer_name in @selected_scorers")
             if rating_query_list:
                 rating_query_str = ' and '.join(rating_query_list)
                 self.filtered_ratings = self.ratings.query(rating_query_str).reset_index()
