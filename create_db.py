@@ -145,16 +145,11 @@ def create_db(dbpath, srid=4326, verbose=False):
         
         CREATE TABLE condition_seqs (
             seq_id TEXT, 
-            scorer_name TEXT 
+            scorer_name TEXT,
             scores BOOLEAN, 
             PRIMARY KEY(seq_id, scorer_name), 
             FOREIGN KEY(seq_id) REFERENCES sequence(seq_id) ON DELETE CASCADE);
         """, """
-        
-        CREATE INDEX tag_value_idx ON tag (value);
-        """, """
-        
-        CREATE INDEX IF NOT EXISTS photo_md5hash_idx ON photo (md5hash);
         
         """, """
         CREATE VIEW gen_seq_count AS 
