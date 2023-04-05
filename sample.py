@@ -64,7 +64,7 @@ def get_photos(dbpath, animal=None, animal_not=None, animal_like=None, animal_no
 
     sql = '\n'.join((
         "SELECT a.md5hash, a.id, a.cnt, a.classifier, a.seq_id, b.path, b.fname, b.site_name, b.dt_orig, ",
-        "       b.camera_id",
+        "       b.year_orig, b.camera_id",
         "  FROM animal AS a",
         " INNER JOIN photo AS b ON a.md5hash = b.md5hash"))
     param_list = []
@@ -84,14 +84,19 @@ def get_photos(dbpath, animal=None, animal_not=None, animal_like=None, animal_no
             where.append("a.id NOT LIKE ?")
             param_list.extend([n])
     if date_range is not None:
-        assert len(date_range) == 2, "Date range does not have 2 values."
-        assert len(date_range[0].split('-')) == len(date_range[1].split('-')), \
-            'Date ranges are of different format.'
-        assert 2 <= len(date_range[0].split('-')) <= 3, "Date ranges given in incorrect format."
-        if len(date_range[0].split('-')) == 3:
-            where.append("date(substr(b.dt_orig, 1, 19)) BETWEEN ? AND ?")
-        elif len(date_range[0].split('-')) == 2:
-            where.append("strftime('%m-%d', date(substr(b.dt_orig, 1, 19))) BETWEEN ? AND ?")
+        date_where = []
+        assert len(date_range) % 2 == 0, "Date range is not a multiple of 2."
+        for i in range(0, int(len(date_range)/2)):
+            dates = date_range[i*2:(i*2)+2]
+            assert len(dates[0].split('-')) == len(dates[1].split('-')), \
+                'Date ranges are of different format.'
+            assert 2 <= len(dates[0].split('-')) <= 3, "Date ranges given in incorrect format."
+            if len(date_range[0].split('-')) == 3:
+                date_where.append("date(substr(b.dt_orig, 1, 19)) BETWEEN ? AND ?")
+            elif len(date_range[0].split('-')) == 2:
+                date_where.append("strftime('%m-%d', date(substr(b.dt_orig, 1, 19))) BETWEEN ? AND ?")
+        date_wstr = '(' + ' OR '.join(date_where) + ')'
+        where.append(date_wstr)
         param_list.extend(date_range)
     if site_name is not None:
         where.append("b.site_name IN ({})".format(', '.join('?' * len(site_name))))
@@ -511,19 +516,19 @@ if __name__ == "__main__":
     parser.add_argument('dbpath', help='path to sqlite database.')
     parser.add_argument('base_path', help='base folder for photos.')
     parser.add_argument('scorer_name', help='the full name of the person doing the scoring (e.g. "Firstname Lastname")')
-    parser.add_argument('-a', '--animal', nargs='*', help='The id of the animal(s) to restrict photos to '
+    parser.add_argument('-a', '--animal', nargs='+', help='The id of the animal(s) to restrict photos to '
                                                           '(e.g. "Equus ferus caballus").')
-    parser.add_argument('-A', '--animal_not', nargs='*', help='The id of the animal(s) to restrict from photos.')
-    parser.add_argument('-l', '--animal_like', nargs='*', help='A string to partially match to animal id for inclusion '
+    parser.add_argument('-A', '--animal_not', nargs='+', help='The id of the animal(s) to restrict from photos.')
+    parser.add_argument('-l', '--animal_like', nargs='+', help='A string to partially match to animal id for inclusion '
                                                                'using SQL syntax (e.g. "Equus%%").')
-    parser.add_argument('-L', '--animal_not_like', nargs='*', help='A string to partially match to animal id for '
+    parser.add_argument('-L', '--animal_not_like', nargs='+', help='A string to partially match to animal id for '
                                                                    'exclusion using SQL syntax.')
-    parser.add_argument('-d', '--date_range', nargs=2, help='date ranges to filter by (2 arguments in YYYY-MM-DD)'
-                        ' format or MM-DD format.')
-    parser.add_argument('-s', '--site_name', nargs='*', help='site name(s) to filter by (e.g. "Austin" '
+    parser.add_argument('-d', '--date_range', nargs='+', help='date ranges to filter by (2 arguments in YYYY-MM-DD)'
+                        ' format or MM-DD format for each date range')
+    parser.add_argument('-s', '--site_name', nargs='+', help='site name(s) to filter by (e.g. "Austin" '
                         '"Becky Springs").')
-    parser.add_argument('-c', '--camera', nargs='*', help='camera identifier(s) for those sites with multiple cameras.')
-    parser.add_argument('-C', '--classifier', nargs='*', help='the name of the person who classified the photo to '
+    parser.add_argument('-c', '--camera', nargs='+', help='camera identifier(s) for those sites with multiple cameras.')
+    parser.add_argument('-C', '--classifier', nargs='+', help='the name of the person who classified the photo to '
                                                               'filter by.')
     parser.add_argument('-v', '--verbose', action='store_true', help='include more verbose output for debugging.')
     parser.add_argument('-q', '--seq_id', nargs='+',
@@ -538,6 +543,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.date_range:
+        if len(args.date_range) % 2 != 0:
+            print("date_range argument must by a multiple of two. Quitting...")
+            quit()
     my_seqs = copy.deepcopy(args.seq_id)
     args.seq_id = construct_seq_list(args.seq_file, my_seqs)
     if args.seq_id is None:

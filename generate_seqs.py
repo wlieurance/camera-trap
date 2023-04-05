@@ -80,7 +80,8 @@ def limit_by_generated(sql, filter_generated):
     return new_sql
 
 
-def get_seqs(dbpath, sql, params, seq_no, verbose=False):
+def get_seqs(dbpath, sql, params, seq_no, by_id=False, by_year=False, by_site=False, by_camera=False,
+             verbose=False):
     """returns a list of seqs based on the given criteria"""
     print("getting sequences...")
     con = sqlite.connect(dbpath)
@@ -88,17 +89,45 @@ def get_seqs(dbpath, sql, params, seq_no, verbose=False):
     if verbose:
         con.set_trace_callback(print)
     c = con.cursor()
-    group_sql = "SELECT seq_id, count(md5hash) AS n FROM gen_filtered GROUP BY seq_id"
-    if seq_no is None:
-        new_sql = ' \n '.join((sql, group_sql))
-    else:
-        rando_sql = "ORDER BY random() LIMIT ?"
-        new_sql = ' \n '.join((sql, group_sql, rando_sql))
-        params.append(seq_no)
-    rows = c.execute(new_sql, params)
     seq_list = []
-    for row in rows:
-        seq_list.append(row['seq_id'])
+    if seq_no is not None:
+        group_list = []
+        if by_id:
+            group_list.append('id')
+        if by_year:
+            group_list.append('year_orig')
+        if by_site:
+            group_list.append('site_name')
+        if by_camera:
+            group_list.append('camera_id')
+        if group_list:
+            group_fields = ', '.join(group_list)
+            having = "HAVING " + ' AND '.join([f'{x} IS NOT NULL' for x in group_list])
+            partition_sql = ' \n '.join((sql, f"SELECT {group_fields} FROM gen_filtered GROUP BY {group_fields}",
+                                         having))
+            group_rows = c.execute(partition_sql, params).fetchall()
+            where = "WHERE " + ' AND '.join([f'{x} = ?' for x in group_list])
+            nrows = len(group_rows)
+        else:
+            where = ""
+            nrows = 1
+        group_sql = f"SELECT seq_id, count(md5hash) AS n FROM gen_filtered {where} GROUP BY seq_id ORDER BY random() " \
+                    "LIMIT ?;"
+        new_sql = ' \n '.join((sql, group_sql))
+        for i in range(0, nrows):
+            row_params = params.copy()
+            if group_list:
+                row_params.extend(list(group_rows[i]))
+            row_params.append(seq_no)
+            rows = c.execute(new_sql, row_params)
+            for row in rows:
+                seq_list.append(row['seq_id'])
+    else:
+        group_sql = "SELECT seq_id, count(md5hash) AS n FROM gen_filtered GROUP BY seq_id;"
+        new_sql = ' \n '.join((sql, group_sql))
+        rows = c.execute(new_sql, params)
+        for row in rows:
+            seq_list.append(row['seq_id'])
     con.close()
     return new_sql, params, seq_list
 
@@ -159,9 +188,10 @@ def pop_generation(dbpath, script_vars, seqs):
     gen_id = hash.hexdigest()
     gen_sql = '\n'.join((
         "INSERT INTO generation (gen_id, gen_dt, dbpath, seq_file, classifier, animal, date_range, site_name, camera, ",
-        "                        overwrite, seq_no, filter_condition, filter_generated, subsample, label) VALUES ",
+        "                        overwrite, seq_no, filter_condition, filter_generated, partition, subsample, label) ",
+        "VALUES ",
         "(:gen_id, :gen_dt, :dbpath, :seq_file, :classifier, :animal, :date_range, :site_name, :camera, ",
-        "                        :overwrite, :seq_no, :filter_condition, :filter_generated, :subsample, :label);"))
+        " :overwrite, :seq_no, :filter_condition, :filter_generated, :partition, :subsample, :label);"))
     script_vars['gen_dt'] = date.today().isoformat()
     script_vars['gen_id'] = gen_id
     formatted_vars = dict()
@@ -170,6 +200,20 @@ def pop_generation(dbpath, script_vars, seqs):
             formatted_vars[key] = '; '.join([str(x) for x in value])
         else:
             formatted_vars[key] = value
+    part_list = []
+    if script_vars['by_id']:
+        part_list.append('id')
+    if script_vars['by_year']:
+        part_list.append('year_orig')
+    if script_vars['by_site']:
+        part_list.append('site_name')
+    if script_vars['by_camera']:
+        part_list.append('camera_id')
+    part_str = '; '.join(part_list)
+    if part_list:
+        formatted_vars['partition'] = part_str
+    else:
+        formatted_vars['partition'] = None
     conn = sqlite.connect(dbpath)
     c = conn.cursor()
     c.execute(gen_sql, formatted_vars)
@@ -191,19 +235,28 @@ if __name__ == "__main__":
     parser.add_argument('dbpath', help='path to sqlite database.')
     parser.add_argument('-q', '--seq_file', help='The local path to a delimited file in which to store the sampled '
                                                  'sequences.')
-    parser.add_argument('-C', '--classifier', nargs='*', help='the name of the person who classified the photo to '
+    parser.add_argument('-C', '--classifier', nargs='+', help='the name of the person who classified the photo to '
                                                               'filter by.')
-    parser.add_argument('-a', '--animal', nargs='*', help='The id of the animal(s) to restrict photos to '
+    parser.add_argument('-a', '--animal', nargs='+', help='The id of the animal(s) to restrict photos to '
                                                           '(e.g. "Equus ferus caballus").')
-    parser.add_argument('-d', '--date_range', nargs=2, help='date ranges to filter by (2 arguments in YYYY-MM-DD)'
+    parser.add_argument('-A', '--animal_not', nargs='+', help='The id of the animal(s) to restrict from photos.')
+    parser.add_argument('-l', '--animal_like', nargs='+', help='A string to partially match to animal id for inclusion '
+                                                               'using SQL syntax (e.g. "Equus%%").')
+    parser.add_argument('-L', '--animal_not_like', nargs='+', help='A string to partially match to animal id for '
+                                                                   'exclusion using SQL syntax.')
+    parser.add_argument('-d', '--date_range', nargs='+', help='date ranges to filter by (2 arguments in YYYY-MM-DD)'
                         ' format or MM-DD format.')
-    parser.add_argument('-s', '--site_name', nargs='*', help='site name(s) to filter by (e.g. "Austin" '
+    parser.add_argument('-s', '--site_name', nargs='+', help='site name(s) to filter by (e.g. "Austin" '
                         '"Becky Springs").')
-    parser.add_argument('-c', '--camera', nargs='*', help='camera identifier(s) for those sites with multiple cameras.')
+    parser.add_argument('-c', '--camera', nargs='+', help='camera identifier(s) for those sites with multiple cameras.')
     parser.add_argument('-o', '--overwrite', action='store_true', help='overwrite an existing seq_file instead of '
                                                                        'appending to it, which is the default behavior'
                                                                        ').')
     parser.add_argument('-n', '--seq_no', type=int, help='limit output to n sequences.')
+    parser.add_argument('--by_id', action='store_true', help='generate --seq_no for each different id.')
+    parser.add_argument('--by_year', action='store_true', help='generate --seq_no for each different year.')
+    parser.add_argument('--by_site', action='store_true', help='generate --seq_no for each different site.')
+    parser.add_argument('--by_camera', action='store_true', help='generate --seq_no for each different camera.')
     parser.add_argument('-f', '--filter_condition', action='store_true', help='limit output sequences to those not '
                                                                               'already stored in the condition_seqs '
                                                                               'table.')
@@ -214,32 +267,38 @@ if __name__ == "__main__":
                                                               'into a separate csv file (my_document_sub.csv).')
     parser.add_argument('-k', '--save', action='store_true',
                         help='Store the generated sequences in the ''generation'' and ''sequence_gen'' tables.')
-    parser.add_argument('-l', '--label', help='A custom label to use in identifying the sequence.')
+    parser.add_argument('--label', help='A custom label to use in identifying the sequence.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Print out extra information such as queries used to generate sequences.')
 
     args = parser.parse_args()
 
-    # args = parser.parse_args([r"D:\horse_subset\horse_subset.sqlite", "-q",
-    #                           r"C:\Users\wlieurance\Documents\temp\test.csv", "-a",
-    #                           "Equus ferus caballus", "-d", "2016-06-30", "2018-07-14", "-s", "Becky Springs", "-c",
-    #                           "1", "-n", "20", "-f", "-F", "-S", "0.2"])
+    if args.date_range:
+        if len(args.date_range) % 2 != 0:
+            print("date_range argument must by a multiple of two. Quitting...")
+            quit()
+    if args.seq_file:
+        if not os.path.isdir(os.path.dirname(args.seq_file)):
+            print(os.path.dirname(args.seq_file), "does not exist. Quitting...")
+            quit()
 
-    my_sql, my_params, my_photos = get_photos(dbpath=args.dbpath, animal=args.animal,
-                                              date_range=args.date_range, site_name=args.site_name,
-                                              camera=args.camera, classifier=args.classifier, df=False)
+    my_sql, my_params, my_photos = get_photos(dbpath=args.dbpath, animal=args.animal, animal_not=args.animal_not,
+                                              animal_like=args.animal_like, animal_not_like=args.animal_not_like,
+                                              date_range=args.date_range, site_name=args.site_name, camera=args.camera,
+                                              classifier=args.classifier, df=False)
     with_sql = enclose_with_sql(sql=my_sql)
     filt_sql = limit_by_condition(sql=with_sql, filter_condition=args.filter_condition)
     gen_sql = limit_by_generated(sql=filt_sql, filter_generated=args.filter_generated)
     final_sql, final_params, seqs = get_seqs(dbpath=args.dbpath, sql=gen_sql, params=my_params,
-                                             seq_no=args.seq_no, verbose=args.verbose)
+                                             seq_no=args.seq_no, verbose=args.verbose, by_id=args.by_id,
+                                             by_year=args.by_year, by_site=args.by_site, by_camera=args.by_camera)
     print(len(seqs), "sequences found.")
+    write_csv(outfile=args.seq_file, seqs=seqs, params=final_params, comment=True, overwrite=args.overwrite,
+              subsample=args.subsample)
     if args.save:
         print('Saving generated sequences...')
         pop_generation(dbpath=args.dbpath, script_vars=vars(args), seqs=seqs)
     else:
         print('Not saving generated sequences...')
-    write_csv(outfile=args.seq_file, seqs=seqs, params=final_params, comment=True, overwrite=args.overwrite,
-              subsample=args.subsample)
 
 
