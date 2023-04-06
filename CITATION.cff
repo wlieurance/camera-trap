@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+title: Camera Trap Management Tools
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Wade
+    family-names: Lieurance
+    email: wlieurance@gmail.com
+    orcid: 'https://orcid.org/0000-0003-1908-0197'
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.7806645
+repository-code: 'https://github.com/wlieurance/camera-trap'
+abstract: >-
+  Camera Trap management CLI tools which:
+
+  1) Generate sequences IDs for time and space associated
+  images of an object.
+
+  2) Randomly sample sequences based on given criteria.
+
+  3) Draw and store bounding box info and rating value for
+  objects.
+keywords:
+  - camera
+  - trap
+  - sample
+  - sequence
+  - database
+license: GPL-3.0
+commit: 424b851
+version: v0.2.1-beta
+date-released: '2023-04-06'
