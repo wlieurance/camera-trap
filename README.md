@@ -1,4 +1,4 @@
-# camera_trap
+# Camera Trap Management Tools
 A set of tools for storing and managing camera trap data.
 
 # Installation
