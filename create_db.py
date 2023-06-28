@@ -66,11 +66,18 @@ def create_animal_tables(con: Union[sqlite.Connection, psycopg.Connection], verb
 
     create_list = [
         '\n'.join((
+            "CREATE TABLE IF NOT EXISTS area("
+            "    area_name VARCHAR PRIMARY KEY,",
+            "    area_type VARCHAR,",
+            f"    {site_geom}));")),
+        '\n'.join((
             "CREATE TABLE IF NOT EXISTS site(",
             "    site_name VARCHAR,",
             "    state_code VARCHAR (2),",
+            "    area_name VARCHAR,"
             f"    {site_geom}",
-            "PRIMARY KEY(site_name));")),
+            "PRIMARY KEY(site_name),"
+            "FOREIGN KEY(area_name) REFERENCES area(area_name) ON DELETE SET NULL ON UPDATE CASCADE);")),
         '\n'.join((
             "CREATE TABLE IF NOT EXISTS camera (",
             "    site_name VARCHAR,",
